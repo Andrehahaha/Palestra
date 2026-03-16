@@ -53,3 +53,4 @@ firebase.json
 lib/firebase_options.dart
 android/app/google-services.json
 ios/Pods
+lib/firebase_options.dart
