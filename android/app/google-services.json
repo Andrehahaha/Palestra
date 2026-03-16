@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "969748256853",
+    "project_id": "palestrai-5856f",
+    "storage_bucket": "palestrai-5856f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:969748256853:android:a13558c200a737aa115cdc",
+        "android_client_info": {
+          "package_name": "com.example.palestra"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC9STGUH1f6Pt52ZBVHNk1a3NOPxLptX6c"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
