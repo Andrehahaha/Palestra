@@ -46,11 +46,9 @@ app.*.map.json
 # Chiavi segrete e variabili d'ambiente
 .env
 .env*
-firebase.json
 .env
 .env.local
 .env.*.local
-lib/firebase_options.dart
+
 android/app/google-services.json
 ios/Pods
-lib/firebase_options.dart

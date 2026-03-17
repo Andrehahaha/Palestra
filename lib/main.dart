@@ -539,6 +539,7 @@ class WorkoutsScreen extends StatefulWidget {
   State<WorkoutsScreen> createState() => _WorkoutsScreenState();
 }
 
+
 class _WorkoutsScreenState extends State<WorkoutsScreen> {
   List<Scheda> mieSchede = [];
   List<Allenamento> storico = []; 
@@ -634,9 +635,8 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
     await prefs.setString('storico_salvato', jsonEncode(storico.map((e) => e.toJson()).toList()));
   }
 
-  // 👇 NUOVA FUNZIONE: DUPLICA SCHEDA
+  // 👇 DUPLICA SCHEDA
   void _duplicaScheda(Scheda schedaOriginale) {
-    // Trasforma in JSON e ricrea, così è un clone perfetto "staccato" dall'originale
     final Map<String, dynamic> jsonCopia = schedaOriginale.toJson();
     jsonCopia['nome'] = '${schedaOriginale.nome} (Copia)';
     
@@ -650,6 +650,38 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Scheda duplicata con successo! 📄🔄'), backgroundColor: Colors.blueAccent)
     );
+  }
+
+  // 👇 NUOVA FUNZIONE: RINOMINA LA SINGOLA SCHEDA
+  Future<void> _rinominaScheda(Scheda scheda) async {
+    TextEditingController controller = TextEditingController(text: scheda.nome);
+    String? nuovoNome = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Rinomina Scheda', style: TextStyle(fontWeight: FontWeight.bold)),
+        content: TextField(
+          controller: controller, 
+          decoration: const InputDecoration(hintText: 'Nuovo nome...', border: OutlineInputBorder()), 
+          autofocus: true
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annulla', style: TextStyle(color: Colors.grey))),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.deepOrange, foregroundColor: Colors.white), 
+            onPressed: () => Navigator.pop(context, controller.text.trim()), 
+            child: const Text('Salva')
+          ),
+        ],
+      )
+    );
+
+    if (nuovoNome != null && nuovoNome.isNotEmpty && nuovoNome != scheda.nome) {
+      setState(() {
+        scheda.nome = nuovoNome;
+      });
+      _salvaDati();
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Nome aggiornato! ✏️'), backgroundColor: Colors.green));
+    }
   }
 
   Future<void> _rinominaCategoria(String vecchioNome) async {
@@ -920,10 +952,15 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
                                         title: Text(scheda.nome, style: const TextStyle(fontWeight: FontWeight.bold)), 
                                         subtitle: Text('${scheda.esercizi.length} esercizi • ${scheda.livello}\n(Tieni premuto per spostare)'), 
                                         
-                                        // 👇 QUI ABBIAMO INSERITO IL BOTTONE DUPLICA
+                                        // 👇 ECCO IL BLOCCO MAGICO CON MATITA + COPIA
                                         trailing: Row(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
+                                            IconButton(
+                                              icon: const Icon(Icons.edit, size: 20, color: Colors.orangeAccent),
+                                              tooltip: 'Rinomina scheda',
+                                              onPressed: () => _rinominaScheda(scheda),
+                                            ),
                                             IconButton(
                                               icon: const Icon(Icons.copy, size: 20, color: Colors.lightBlueAccent),
                                               tooltip: 'Duplica questa scheda',
