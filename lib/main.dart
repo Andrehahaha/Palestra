@@ -12,6 +12,7 @@ import 'screens/coach_dashboard.dart';
 import 'screens/home_screen.dart';
 import 'screens/workouts_screen.dart';
 import 'screens/profilo_screen.dart';
+import 'screens/dolore_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -138,6 +139,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     final List<Widget> screens = [
       HomeScreen(key: UniqueKey()),
       WorkoutsScreen(key: UniqueKey()),
+      DoloreScreen(key: UniqueKey()),
       ProfiloScreen(key: UniqueKey()),
     ];
 
@@ -152,6 +154,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
           BottomNavigationBarItem(icon: Icon(Icons.fitness_center), label: 'Allenamenti'),
+          BottomNavigationBarItem(icon: Icon(Icons.healing), label: 'Dolori'),
           BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profilo'),
         ],
       ),
