@@ -132,19 +132,23 @@ class MainNavigationScreen extends StatefulWidget {
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _currentIndex = 0;
+  late final List<Widget> screens;
+
+  @override
+  void initState() {
+    super.initState();
+    screens = const [
+      HomeScreen(),
+      WorkoutsScreen(),
+      DoloreScreen(),
+      ProfiloScreen(),
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
-    // IL SEGRETO PER AGGIORNARE TUTTO ISTANTANEAMENTE QUANDO CAMBI SCHERMATA
-    final List<Widget> screens = [
-      HomeScreen(key: UniqueKey()),
-      WorkoutsScreen(key: UniqueKey()),
-      DoloreScreen(key: UniqueKey()),
-      ProfiloScreen(key: UniqueKey()),
-    ];
-
     return Scaffold(
-      body: screens[_currentIndex],
+      body: IndexedStack(index: _currentIndex, children: screens),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         selectedItemColor: Colors.deepOrange,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:vibration/vibration.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -27,13 +28,87 @@ class DettaglioSchedaScreen extends StatefulWidget {
   State<DettaglioSchedaScreen> createState() => _DettaglioSchedaScreenState();
 }
 
-class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> {
+class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with WidgetsBindingObserver {
   List<Map<String, dynamic>> _databaseEsercizi = [];
+  Timer? _bozzaDebounce;
+
+  String get _bozzaKey => 'workout_bozza_${widget.scheda.nome}';
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _caricaDatabase(); 
+    _caricaBozzaWorkout();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _bozzaDebounce?.cancel();
+    _salvaBozzaWorkout();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      _salvaBozzaWorkout();
+    }
+  }
+
+  void _scheduleBozzaSave() {
+    _bozzaDebounce?.cancel();
+    _bozzaDebounce = Timer(const Duration(milliseconds: 500), _salvaBozzaWorkout);
+  }
+
+  Future<void> _caricaBozzaWorkout() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final bozzaJson = prefs.getString(_bozzaKey);
+      if (bozzaJson == null || !mounted) return;
+
+      final decoded = jsonDecode(bozzaJson);
+      if (decoded is! Map<String, dynamic>) return;
+      final schedaMap = decoded['scheda'];
+      if (schedaMap is! Map) return;
+
+      final bozza = Scheda.fromJson(Map<String, dynamic>.from(schedaMap));
+      setState(() {
+        widget.scheda.nome = bozza.nome;
+        widget.scheda.livello = bozza.livello;
+        widget.scheda.categoria = bozza.categoria;
+        widget.scheda.esercizi = bozza.esercizi;
+      });
+    } catch (e) {
+      debugPrint('Errore caricamento bozza workout: $e');
+    }
+  }
+
+  Future<void> _salvaBozzaWorkout() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _bozzaKey,
+        jsonEncode({
+          'scheda': widget.scheda.toJson(),
+          'savedAt': DateTime.now().toIso8601String(),
+        }),
+      );
+    } catch (e) {
+      debugPrint('Errore salvataggio bozza workout: $e');
+    }
+  }
+
+  Future<void> _pulisciBozzaWorkout() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_bozzaKey);
+    } catch (e) {
+      debugPrint('Errore pulizia bozza workout: $e');
+    }
   }
 
   Future<void> _caricaDatabase() async {
@@ -89,6 +164,7 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> {
       }
 
       if (!mounted) return;
+      await _pulisciBozzaWorkout();
       Navigator.pop(context); 
       Navigator.pop(context, true); 
 
@@ -348,7 +424,12 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> {
             icon: const Icon(Icons.add),
             onPressed: () async {
               final nuovo = await Navigator.push(context, MaterialPageRoute(builder: (context) => const CreaEsercizioScreen()));
-              if (nuovo != null) { setState(() { widget.scheda.esercizi.add(nuovo); }); }
+              if (nuovo != null) {
+                setState(() {
+                  widget.scheda.esercizi.add(nuovo);
+                });
+                _scheduleBozzaSave();
+              }
             },
           ),
         ],
@@ -361,6 +442,7 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> {
             final esercizio = widget.scheda.esercizi.removeAt(oldIndex);
             widget.scheda.esercizi.insert(newIndex, esercizio);
           });
+          _scheduleBozzaSave();
         },
         children: [
           for (int i = 0; i < widget.scheda.esercizi.length; i++)
@@ -458,6 +540,11 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> {
           direction: DismissDirection.endToStart,
           background: Container(color: Colors.red, alignment: Alignment.centerRight, padding: const EdgeInsets.symmetric(horizontal: 20), child: const Icon(Icons.delete, color: Colors.white)),
           onDismissed: (direction) { setState(() { widget.scheda.esercizi.removeAt(index); }); },
+          onUpdate: (details) {
+            if (details.reached == 1.0) {
+              _scheduleBozzaSave();
+            }
+          },
           child: Card(
             margin: EdgeInsets.only(
               left: 16, 
@@ -489,7 +576,10 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> {
                       if (matchDb != null) IconButton(icon: const Icon(Icons.play_circle_fill, color: Colors.deepOrange, size: 28), onPressed: () => _mostraDettagliEsercizio(matchDb)),
                       IconButton(icon: const Icon(Icons.edit, color: Colors.lightBlueAccent, size: 20), onPressed: () async {
                         final mod = await Navigator.push(context, MaterialPageRoute(builder: (c) => CreaEsercizioScreen(esercizioDaModificare: esercizio)));
-                        if (mod != null) setState(() => widget.scheda.esercizi[index] = mod);
+                        if (mod != null) {
+                          setState(() => widget.scheda.esercizi[index] = mod);
+                          _scheduleBozzaSave();
+                        }
                       }),
                     ],
                   ),
@@ -549,25 +639,35 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> {
                             keyboardType: TextInputType.number,
                             decoration: InputDecoration(hintText: prev != null ? '${prev['peso']}kg' : 'Kg', border: InputBorder.none, isDense: true, hintStyle: const TextStyle(color: Colors.white24)),
                             controller: TextEditingController(text: serie.peso)..selection = TextSelection.collapsed(offset: serie.peso.length),
-                            onChanged: (v) => serie.peso = v,
+                            onChanged: (v) {
+                              serie.peso = v;
+                              _scheduleBozzaSave();
+                            },
                           )),
                           Expanded(flex: 3, child: TextField(
                             keyboardType: TextInputType.number,
                             decoration: InputDecoration(hintText: prev != null ? '${prev['reps']}r' : 'Reps', border: InputBorder.none, isDense: true, hintStyle: const TextStyle(color: Colors.white24)),
                             controller: TextEditingController(text: serie.ripetizioniFatte)..selection = TextSelection.collapsed(offset: serie.ripetizioniFatte.length),
-                            onChanged: (v) => serie.ripetizioniFatte = v,
+                            onChanged: (v) {
+                              serie.ripetizioniFatte = v;
+                              _scheduleBozzaSave();
+                            },
                           )),
                           Expanded(flex: 2, child: TextField(
                             keyboardType: TextInputType.number,
                             decoration: InputDecoration(hintText: prev != null && prev['rpe'] != null ? 'RPE ${prev['rpe']}' : 'RPE', border: InputBorder.none, isDense: true, hintStyle: const TextStyle(color: Colors.white12, fontSize: 11)),
                             style: const TextStyle(color: Colors.amber, fontSize: 14),
                             controller: TextEditingController(text: serie.rpe)..selection = TextSelection.collapsed(offset: serie.rpe.length),
-                            onChanged: (v) => serie.rpe = v,
+                            onChanged: (v) {
+                              serie.rpe = v;
+                              _scheduleBozzaSave();
+                            },
                           )),
                           IconButton(
                             icon: Icon(serie.isCompletata ? Icons.check_box : Icons.check_box_outline_blank, color: serie.isCompletata ? Colors.green : Colors.grey, size: 22),
                             onPressed: () async {
                               setState(() { serie.isCompletata = !serie.isCompletata; });
+                              _scheduleBozzaSave();
                               if (await Vibration.hasVibrator() == true) Vibration.vibrate(duration: 50, amplitude: 100);
                               if (serie.isCompletata) _avviaTimerRecupero(_estraiSecondi(esercizio.recupero));
                             },
@@ -600,30 +700,48 @@ class _RecuperoTimerWidgetState extends State<RecuperoTimerWidget> {
   late int _rimanenti;
   Timer? _t;
   Timer? _alarmTimer;
+  late DateTime _fineTimer;
 
   @override
   void initState() {
     super.initState();
     _rimanenti = widget.secondiTotali;
-    
-    _t = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (_rimanenti > 0) { 
-        if (mounted) setState(() => _rimanenti--); 
-      } else {
-        _t?.cancel(); 
-        _avviaSvegliaInfinita(); 
+
+    _fineTimer = DateTime.now().add(Duration(seconds: widget.secondiTotali));
+    _t = Timer.periodic(const Duration(seconds: 1), (_) => _aggiornaDaTempoReale());
+    _aggiornaDaTempoReale();
+  }
+
+  void _aggiornaDaTempoReale() {
+    final secondiRestanti = _fineTimer.difference(DateTime.now()).inSeconds;
+    final nuoviRimanenti = secondiRestanti > 0 ? secondiRestanti : 0;
+
+    if (!mounted) return;
+    if (_rimanenti != nuoviRimanenti) {
+      setState(() => _rimanenti = nuoviRimanenti);
+    }
+
+    if (_rimanenti == 0) {
+      _t?.cancel();
+      if (_alarmTimer == null || !_alarmTimer!.isActive) {
+        _avviaSvegliaInfinita();
       }
-    });
+    }
   }
 
   void _avviaSvegliaInfinita() async {
-    if (await Vibration.hasVibrator() == true) {
-      Vibration.vibrate(duration: 1000, amplitude: 255);
-      
-      _alarmTimer = Timer.periodic(const Duration(milliseconds: 1500), (timer) {
+    Future<void> playCue() async {
+      SystemSound.play(SystemSoundType.alert);
+      if (await Vibration.hasVibrator() == true) {
         Vibration.vibrate(duration: 1000, amplitude: 255);
-      });
+      }
     }
+
+    await playCue();
+
+    _alarmTimer = Timer.periodic(const Duration(milliseconds: 1500), (timer) {
+      playCue();
+    });
   }
 
   @override

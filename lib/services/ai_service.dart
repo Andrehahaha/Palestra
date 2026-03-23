@@ -6,8 +6,135 @@ import 'package:flutter_dotenv/flutter_dotenv.dart'; // 👈 Import per leggere 
 
 import '../models/scheda.dart';
 import '../services/api_esercizi.dart'; 
+import '../services/dizionario_esercizi.dart';
 
 class AiService {
+
+  static final RegExp _separatori = RegExp(r'[^a-z0-9àèéìòù]');
+  static const Set<String> _stopWords = {
+    'con', 'al', 'allo', 'alla', 'ai', 'agli', 'alle', 'a', 'da', 'di', 'del', 'della', 'dello',
+    'dei', 'degli', 'delle', 'in', 'su', 'per', 'ed', 'e', 'the', 'of',
+  };
+
+  static String _normalizza(String input) {
+    final lower = input.toLowerCase().trim();
+    final replaced = lower
+        .replaceAll('à', 'a')
+        .replaceAll('è', 'e')
+        .replaceAll('é', 'e')
+        .replaceAll('ì', 'i')
+        .replaceAll('ò', 'o')
+        .replaceAll('ù', 'u');
+    return replaced.replaceAll(_separatori, ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
+  static Set<String> _tokenizza(String input) {
+    return _normalizza(input)
+        .split(' ')
+        .where((token) => token.isNotEmpty && !_stopWords.contains(token))
+        .toSet();
+  }
+
+  static int _levenshtein(String a, String b) {
+    if (a == b) return 0;
+    if (a.isEmpty) return b.length;
+    if (b.isEmpty) return a.length;
+
+    final previous = List<int>.generate(b.length + 1, (j) => j);
+    final current = List<int>.filled(b.length + 1, 0);
+
+    for (int i = 1; i <= a.length; i++) {
+      current[0] = i;
+      for (int j = 1; j <= b.length; j++) {
+        final cost = a[i - 1] == b[j - 1] ? 0 : 1;
+        current[j] = [
+          current[j - 1] + 1,
+          previous[j] + 1,
+          previous[j - 1] + cost,
+        ].reduce((x, y) => x < y ? x : y);
+      }
+      for (int j = 0; j <= b.length; j++) {
+        previous[j] = current[j];
+      }
+    }
+    return previous[b.length];
+  }
+
+  static double _similaritaToken(Set<String> a, Set<String> b) {
+    if (a.isEmpty || b.isEmpty) return 0;
+    final intersection = a.intersection(b).length;
+    final union = a.union(b).length;
+    return union == 0 ? 0 : intersection / union;
+  }
+
+  static String _risolviNomeEsercizio(String rawName, List<String> ufficiali) {
+    final input = rawName.trim();
+    if (input.isEmpty) return rawName;
+
+    final normalizedInput = _normalizza(input);
+
+    for (final nome in ufficiali) {
+      if (_normalizza(nome) == normalizedInput) return nome;
+    }
+
+    final daDizionario = DizionarioEsercizi.daIngleseAItaliano[input] ??
+        DizionarioEsercizi.daIngleseAItaliano.entries
+            .where((e) => _normalizza(e.key) == normalizedInput || _normalizza(e.value) == normalizedInput)
+            .map((e) => e.value)
+            .cast<String?>()
+            .firstWhere((_) => true, orElse: () => null);
+
+    if (daDizionario != null) {
+      final normalizedDict = _normalizza(daDizionario);
+      for (final nome in ufficiali) {
+        if (_normalizza(nome) == normalizedDict) return nome;
+      }
+    }
+
+    final inputTokens = _tokenizza(input);
+    String best = input;
+    double bestScore = -1;
+
+    for (final candidato in ufficiali) {
+      final normCand = _normalizza(candidato);
+      final candTokens = _tokenizza(candidato);
+
+      double score = 0;
+
+      if (normCand.contains(normalizedInput) || normalizedInput.contains(normCand)) {
+        score += 0.25;
+      }
+
+      final tokenScore = _similaritaToken(inputTokens, candTokens);
+      score += tokenScore * 0.45;
+
+      final lev = _levenshtein(normalizedInput, normCand);
+      final maxLen = normalizedInput.length > normCand.length ? normalizedInput.length : normCand.length;
+      final levScore = maxLen == 0 ? 0 : (1 - (lev / maxLen));
+      score += levScore * 0.30;
+
+      if (score > bestScore) {
+        bestScore = score;
+        best = candidato;
+      }
+    }
+
+    return bestScore >= 0.55 ? best : input;
+  }
+
+  static void _normalizzaEserciziJson(List<dynamic> jsonDecodificato, List<String> ufficiali) {
+    for (final scheda in jsonDecodificato) {
+      if (scheda is! Map<String, dynamic>) continue;
+      final esercizi = scheda['esercizi'];
+      if (esercizi is! List) continue;
+
+      for (final esercizio in esercizi) {
+        if (esercizio is! Map<String, dynamic>) continue;
+        final nomeRaw = esercizio['nome']?.toString() ?? '';
+        esercizio['nome'] = _risolviNomeEsercizio(nomeRaw, ufficiali);
+      }
+    }
+  }
   
   // FUNZIONE 1: ANALISI FOTO SCHEDA
   static Future<List<Scheda>?> analizzaFotoScheda(XFile foto) async {
@@ -84,6 +211,9 @@ class AiService {
       if (startIndex != -1 && endIndex != -1) {
         String soloJson = testoRisposta.substring(startIndex, endIndex + 1);
         final List<dynamic> jsonDecodificato = jsonDecode(soloJson);
+
+        _normalizzaEserciziJson(jsonDecodificato, nomiUfficiali);
+
         return jsonDecodificato.map((e) => Scheda.fromJson(e)).toList();
       }
       return null;

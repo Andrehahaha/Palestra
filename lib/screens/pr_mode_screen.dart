@@ -6,7 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/allenamento.dart';
-import '../services/dizionario_esercizi.dart';
+import '../services/dolore_data.dart';
 
 // ============================================================================
 // SCHERMATA MODALITÀ PR
@@ -52,10 +52,28 @@ class _PRModeScreenState extends State<PRModeScreen> {
     {'sets': '1', 'reps': '1', 'perc': 110.0, 'pr': true},
   ];
 
+  String _zonaStretchingSelezionata = 'Lombare';
+
+  void _onZonaCondivisaChanged() {
+    if (!mounted) return;
+    if (_zonaStretchingSelezionata != zonaStretchingNotifier.value) {
+      setState(() => _zonaStretchingSelezionata = zonaStretchingNotifier.value);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
+    _zonaStretchingSelezionata = zonaStretchingNotifier.value;
+    zonaStretchingNotifier.addListener(_onZonaCondivisaChanged);
     _caricaDatiMemoria();
+  }
+
+  @override
+  void dispose() {
+    zonaStretchingNotifier.removeListener(_onZonaCondivisaChanged);
+    _maxController.dispose();
+    super.dispose();
   }
 
   String _getNomeEsteso(String es) {
@@ -66,6 +84,27 @@ class _PRModeScreenState extends State<PRModeScreen> {
 
   Future<void> _caricaDatiMemoria() async {
     final prefs = await SharedPreferences.getInstance();
+
+    final String? zonaSalvata = prefs.getString(zonaStretchingSharedKey);
+    if (zonaSalvata != null && zoneDolore.contains(zonaSalvata)) {
+      _zonaStretchingSelezionata = zonaSalvata;
+      aggiornaZonaStretchingCondivisa(zonaSalvata);
+    }
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      try {
+        final doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+        final cloudZona = doc.data()?['app_state']?['zona_stretching'];
+        if (cloudZona is String && zoneDolore.contains(cloudZona)) {
+          _zonaStretchingSelezionata = cloudZona;
+          aggiornaZonaStretchingCondivisa(cloudZona);
+          await prefs.setString(zonaStretchingSharedKey, cloudZona);
+        }
+      } catch (e) {
+        debugPrint('Errore caricamento zona cloud PR: $e');
+      }
+    }
     
     final String? prStoriciJson = prefs.getString('personal_records');
     if (prStoriciJson != null) {
@@ -84,6 +123,26 @@ class _PRModeScreenState extends State<PRModeScreen> {
     setState(() {
       _prInizialeSessione = prManuali[_esercizioSelezionato] ?? iMieiPRStorici[_getNomeEsteso(_esercizioSelezionato)] ?? 0.0;
     });
+  }
+
+  Future<void> _salvaZonaStretching(String zona) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(zonaStretchingSharedKey, zona);
+    aggiornaZonaStretchingCondivisa(zona);
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      try {
+        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+          'app_state': {
+            'zona_stretching': zona,
+            'updated_at': FieldValue.serverTimestamp(),
+          },
+        }, SetOptions(merge: true));
+      } catch (e) {
+        debugPrint('Errore salvataggio zona cloud PR: $e');
+      }
+    }
   }
 
   Future<void> _salvaPRInStorico(String nomeEs, double peso, double perc, String reps) async {
@@ -339,6 +398,78 @@ class _PRModeScreenState extends State<PRModeScreen> {
     );
   }
 
+  Widget _buildStretchingInfoSection() {
+    final stretching = stretchingPerZona(_zonaStretchingSelezionata);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.self_improvement, color: Colors.lightBlueAccent),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Sezione informativa • Solo stretching',
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'Usa questa mini-routine per mobilità/recupero prima o dopo il lavoro PR.',
+              style: TextStyle(color: Colors.white70),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Zona condivisa con Schede e Dolori',
+              style: TextStyle(color: Colors.lightBlueAccent, fontSize: 12, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: zoneDolore.map((zona) {
+                final isSelected = _zonaStretchingSelezionata == zona;
+                return ChoiceChip(
+                  label: Text(zona),
+                  selected: isSelected,
+                  onSelected: (_) {
+                    setState(() => _zonaStretchingSelezionata = zona);
+                    _salvaZonaStretching(zona);
+                  },
+                  selectedColor: Colors.deepOrange,
+                  labelStyle: TextStyle(
+                    color: isSelected ? Colors.white : Colors.grey.shade300,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  backgroundColor: const Color(0xFF1E1E1E),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 10),
+            ...stretching.map(
+              (riga) => Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('• ', style: TextStyle(fontWeight: FontWeight.bold)),
+                    Expanded(child: Text(riga)),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   // 👇 NUOVA FUNZIONE: PERMETTE DI INSERIRE UNA % CUSTOM E RIORDINA LA LISTA
   Future<void> _aggiungiPercentualeCustom() async {
     TextEditingController percController = TextEditingController();
@@ -519,6 +650,9 @@ class _PRModeScreenState extends State<PRModeScreen> {
                   );
                 }).toList(),
               ),
+              const SizedBox(height: 16),
+
+              _buildStretchingInfoSection(),
               const SizedBox(height: 24),
 
               TextField(
