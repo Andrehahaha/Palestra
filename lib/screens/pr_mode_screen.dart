@@ -158,7 +158,7 @@ class _PRModeScreenState extends State<PRModeScreen> {
     }
   }
 
-  Future<void> _salvaPRManuale(String es, double peso) async {
+  Future<void> _salvaPRManuale(String es, double peso, {bool sincronizzaCloud = false}) async {
     prManuali[es] = peso;
     String nomeEsteso = _getNomeEsteso(es);
     iMieiPRStorici[nomeEsteso] = peso; 
@@ -172,7 +172,7 @@ class _PRModeScreenState extends State<PRModeScreen> {
     await prefs.setString('personal_records', jsonEncode(prGlobali));
 
     final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
+    if (sincronizzaCloud && user != null) {
       try {
         await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
           'personal_records': prGlobali, 
@@ -428,8 +428,7 @@ class _PRModeScreenState extends State<PRModeScreen> {
             ),
             actions: [
               TextButton(onPressed: () => Navigator.pop(context, 0), child: const Text('Annulla', style: TextStyle(color: Colors.grey))),
-              if (dalTastoIndietro)
-                TextButton(onPressed: () => Navigator.pop(context, 1), child: const Text('Scarta ed Esci', style: TextStyle(color: Colors.redAccent))),
+              TextButton(onPressed: () => Navigator.pop(context, 1), child: const Text('Scarta ed Esci', style: TextStyle(color: Colors.redAccent))),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: Colors.deepOrange, foregroundColor: Colors.white),
                 onPressed: () => Navigator.pop(context, 2), 
@@ -444,6 +443,9 @@ class _PRModeScreenState extends State<PRModeScreen> {
     if (scelta == null || scelta == 0) return false; 
 
     if (scelta == 1) {
+      if (!dalTastoIndietro && mounted) {
+        Navigator.pop(context);
+      }
       return true; 
     }
 
@@ -452,7 +454,7 @@ class _PRModeScreenState extends State<PRModeScreen> {
         setState(() {
           _maxController.text = maxPesoRaggiunto == maxPesoRaggiunto.truncateToDouble() ? maxPesoRaggiunto.toInt().toString() : maxPesoRaggiunto.toString();
         });
-        await _salvaPRManuale(_esercizioSelezionato, maxPesoRaggiunto);
+        await _salvaPRManuale(_esercizioSelezionato, maxPesoRaggiunto, sincronizzaCloud: true);
         _prInizialeSessione = maxPesoRaggiunto; 
       }
       
