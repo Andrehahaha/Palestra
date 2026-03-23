@@ -15,7 +15,6 @@ dependencies:
   fl_chart: ^1.1.1
   flutter:
     sdk: flutter
-  flutter_dotenv: ^6.0.0
   google_generative_ai: ^0.4.7
   http: ^1.6.0
   image_picker: ^1.2.1
@@ -54,7 +53,6 @@ flutter:
   uses-material-design: true
 
   assets:
-    - .env
     - assets/playstore.png
     - assets/esercizi_it.json
     - assets/esercizi_master_tiger.json

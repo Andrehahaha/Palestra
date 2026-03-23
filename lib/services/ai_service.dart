@@ -2,13 +2,13 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart'; // 👈 Import per leggere il .env
 
 import '../models/scheda.dart';
 import '../services/api_esercizi.dart'; 
 import '../services/dizionario_esercizi.dart';
 
 class AiService {
+  static const String _geminiApiKey = String.fromEnvironment('GEMINI_API_KEY', defaultValue: '');
 
   static final RegExp _separatori = RegExp(r'[^a-z0-9àèéìòù]');
   static const Set<String> _stopWords = {
@@ -140,7 +140,7 @@ class AiService {
   static Future<List<Scheda>?> analizzaFotoScheda(XFile foto) async {
     try {
       // 👈 Pesca la chiave dal .env in modo sicuro!
-      final String apiKey = dotenv.env['GEMINI_API_KEY'] ?? '';
+      final String apiKey = _geminiApiKey;
       if (apiKey.isEmpty) {
         debugPrint('⚠️ Errore: GEMINI_API_KEY non trovata nel .env');
         return null;
@@ -227,7 +227,7 @@ class AiService {
   static Future<String?> valutaCartella(String nomeCartella, List<Scheda> schede) async {
     try {
       // 👈 Anche qui peschiamo dal .env!
-      final String apiKey = dotenv.env['GEMINI_API_KEY'] ?? '';
+      final String apiKey = _geminiApiKey;
       if (apiKey.isEmpty) {
         return "Errore: Chiave API non configurata.";
       }
