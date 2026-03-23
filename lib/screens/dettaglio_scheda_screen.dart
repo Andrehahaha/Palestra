@@ -120,6 +120,130 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
     }
   }
 
+  String _normalizzaTesto(String value) {
+    return value
+        .toLowerCase()
+        .trim()
+        .replaceAll('à', 'a')
+        .replaceAll('è', 'e')
+        .replaceAll('é', 'e')
+        .replaceAll('ì', 'i')
+        .replaceAll('ò', 'o')
+        .replaceAll('ù', 'u');
+  }
+
+  String _macroTagDaCategoria(String categoria) {
+    final c = _normalizzaTesto(categoria);
+
+    if (c.contains('petto') || c.contains('pettoral')) return 'petto';
+    if (c.contains('dorso') || c.contains('schiena') || c.contains('lombar') || c.contains('trapez') || c.contains('lat')) return 'schiena';
+    if (c.contains('spall') || c.contains('deltoid')) return 'spalle';
+    if (c.contains('bicip') || c.contains('tricip') || c.contains('avambr') || c.contains('bracci')) return 'braccia';
+    if (c.contains('gambe') || c.contains('quadric') || c.contains('femoral') || c.contains('glute') || c.contains('polpacc') || c.contains('addutt') || c.contains('abdutt')) return 'gambe';
+    if (c.contains('core') || c.contains('addom') || c.contains('obliqu')) return 'core';
+    if (c.contains('total')) return 'total';
+    return 'altro';
+  }
+
+  Set<String> _tagGruppiScheda() {
+    final tag = <String>{};
+
+    for (final esercizioScheda in widget.scheda.esercizi) {
+      final nomeScheda = _normalizzaTesto(_traduciNome(esercizioScheda.nome));
+
+      Map<String, dynamic>? match;
+      for (final db in _databaseEsercizi) {
+        final nomeDb = _normalizzaTesto((db['nome'] ?? '').toString());
+        if (nomeDb == nomeScheda) {
+          match = db;
+          break;
+        }
+      }
+
+      if (match != null) {
+        tag.add(_macroTagDaCategoria((match['categoria'] ?? '').toString()));
+      }
+    }
+
+    tag.remove('altro');
+    return tag;
+  }
+
+  int _limiteStretching(Set<String> tagScheda) {
+    final nomeScheda = _normalizzaTesto(widget.scheda.nome);
+    final categoriaScheda = _normalizzaTesto(widget.scheda.categoria);
+    final isFullBody = nomeScheda.contains('full body') ||
+        nomeScheda.contains('total body') ||
+        categoriaScheda.contains('full body') ||
+        categoriaScheda.contains('total body') ||
+        categoriaScheda.contains('total');
+
+    if (isFullBody) return 6;
+    if (tagScheda.length >= 4) return 7;
+    if (tagScheda.length >= 2) return 8;
+    return 6;
+  }
+
+  List<Map<String, dynamic>> _eserciziSoloStretching() {
+    final tagScheda = _tagGruppiScheda();
+    final limite = _limiteStretching(tagScheda);
+
+    List<Map<String, dynamic>> risultati = _databaseEsercizi.where((es) => es['isStretching'] == true).toList();
+
+    if (tagScheda.isNotEmpty) {
+      risultati = risultati.where((es) {
+        final tagStretching = _macroTagDaCategoria((es['categoria'] ?? '').toString());
+        return tagScheda.contains(tagStretching) || tagStretching == 'total';
+      }).toList();
+    }
+
+    if (risultati.isEmpty) {
+      risultati = _databaseEsercizi.where((es) => es['isStretching'] == true).toList();
+    }
+
+    risultati.sort((a, b) => (a['nome'] ?? '').toString().compareTo((b['nome'] ?? '').toString()));
+    return risultati.take(limite).toList();
+  }
+
+  Widget _buildSoloStretchingSection() {
+    final stretching = _eserciziSoloStretching();
+    final tagScheda = _tagGruppiScheda();
+    final sottotitolo = tagScheda.isEmpty
+        ? 'Esercizi dal database master Tiger'
+        : 'Filtrati per gruppi muscolari scheda: ${tagScheda.join(', ')}';
+
+    return Card(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: ExpansionTile(
+        initiallyExpanded: false,
+        leading: const Icon(Icons.self_improvement, color: Colors.lightBlueAccent),
+        title: const Text(
+          'Sezione informativa • Solo stretching',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        subtitle: Text(sottotitolo),
+        childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        children: [
+          if (stretching.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(8),
+              child: Text('Nessun esercizio di stretching disponibile al momento.', style: TextStyle(color: Colors.grey)),
+            )
+          else
+            ...stretching.map(
+              (es) => ListTile(
+                dense: true,
+                leading: const Icon(Icons.fitness_center, size: 18, color: Colors.lightBlueAccent),
+                title: Text(es['nome'] ?? 'Stretching'),
+                trailing: const Icon(Icons.info_outline, color: Colors.grey, size: 18),
+                onTap: () => _mostraDettagliEsercizio(es),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   // 👇 MOTORE DI TRADUZIONE BLINDATO (Ignora maiuscole/minuscole)
   String _traduciNome(String nomeOriginale) {
     String lower = nomeOriginale.toLowerCase().trim();
@@ -434,19 +558,26 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
           ),
         ],
       ),
-      body: ReorderableListView(
-        padding: const EdgeInsets.only(bottom: 100),
-        onReorder: (int oldIndex, int newIndex) {
-          setState(() {
-            if (newIndex > oldIndex) newIndex -= 1;
-            final esercizio = widget.scheda.esercizi.removeAt(oldIndex);
-            widget.scheda.esercizi.insert(newIndex, esercizio);
-          });
-          _scheduleBozzaSave();
-        },
+      body: Column(
         children: [
-          for (int i = 0; i < widget.scheda.esercizi.length; i++)
-            _buildEsercizioItem(widget.scheda.esercizi[i], i),
+          _buildSoloStretchingSection(),
+          Expanded(
+            child: ReorderableListView(
+              padding: const EdgeInsets.only(bottom: 100),
+              onReorder: (int oldIndex, int newIndex) {
+                setState(() {
+                  if (newIndex > oldIndex) newIndex -= 1;
+                  final esercizio = widget.scheda.esercizi.removeAt(oldIndex);
+                  widget.scheda.esercizi.insert(newIndex, esercizio);
+                });
+                _scheduleBozzaSave();
+              },
+              children: [
+                for (int i = 0; i < widget.scheda.esercizi.length; i++)
+                  _buildEsercizioItem(widget.scheda.esercizi[i], i),
+              ],
+            ),
+          ),
         ],
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'firebase_options.dart';
 
@@ -16,11 +15,7 @@ import 'screens/dolore_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  // 🔐 Apri la cassaforte PRIMA di chiamare Firebase
-  await dotenv.load(fileName: ".env");
 
-  // 🔥 Ora Firebase parte e va a leggere le chiavi in modo sicuro
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );

@@ -370,7 +370,7 @@ class _DoloreScreenState extends State<DoloreScreen> {
                 border: Border.all(color: Colors.amber.withOpacity(0.45)),
               ),
               child: const Text(
-                'Suggerimenti generali: se il dolore e forte, dura a lungo o peggiora, sospendi i carichi e senti un professionista sanitario.',
+                'Suggerimenti generali: se il dolore è forte, dura a lungo o peggiora, sospendi i carichi e senti un professionista sanitario.',
                 style: TextStyle(color: Colors.amber, fontWeight: FontWeight.w600),
               ),
             ),
@@ -567,6 +567,7 @@ class _DoloreScreenState extends State<DoloreScreen> {
               icon: Icons.self_improvement,
               color: Colors.lightBlueAccent,
               righe: stretching,
+              initiallyExpanded: true,
             ),
             const SizedBox(height: 14),
             _sezioneConsigli(
@@ -586,38 +587,31 @@ class _DoloreScreenState extends State<DoloreScreen> {
     required IconData icon,
     required Color color,
     required List<String> righe,
+    bool initiallyExpanded = false,
   }) {
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      child: ExpansionTile(
+        initiallyExpanded: initiallyExpanded,
+        leading: Icon(icon, color: color),
+        title: Text(
+          titolo,
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        expandedCrossAxisAlignment: CrossAxisAlignment.start,
+        children: righe.map(
+          (riga) => Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(icon, color: color),
-                const SizedBox(width: 8),
-                Text(
-                  titolo,
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
+                const Text('• ', style: TextStyle(fontWeight: FontWeight.bold)),
+                Expanded(child: Text(riga)),
               ],
             ),
-            const SizedBox(height: 10),
-            ...righe.map(
-              (riga) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('• ', style: TextStyle(fontWeight: FontWeight.bold)),
-                    Expanded(child: Text(riga)),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ).toList(),
       ),
     );
   }

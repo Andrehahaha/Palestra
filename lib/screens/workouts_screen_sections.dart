@@ -67,38 +67,6 @@ extension _WorkoutsScreenSections on _WorkoutsScreenState {
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-          child: InkWell(
-            onTap: () {
-              Navigator.push(context, MaterialPageRoute(builder: (c) => const DoloreScreen()));
-            },
-            borderRadius: BorderRadius.circular(16),
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(colors: [Colors.teal, Colors.lightBlueAccent], begin: Alignment.topLeft, end: Alignment.bottomRight),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: const Row(
-                children: [
-                  Icon(Icons.healing, color: Colors.white, size: 32),
-                  SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('DOLORI & RECUPERO', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 1.1)),
-                        Text('Apri consigli per gestire il dolore', style: TextStyle(color: Colors.white70, fontSize: 13)),
-                      ],
-                    ),
-                  ),
-                  Icon(Icons.arrow_forward_ios, color: Colors.white),
-                ],
-              ),
-            ),
-          ),
-        ),
-        Padding(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
           child: InkWell(
             onTap: () async {

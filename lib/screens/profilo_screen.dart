@@ -204,7 +204,10 @@ class _ProfiloScreenState extends State<ProfiloScreen> with SingleTickerProvider
     Map<String, String> nomiUnivoci = {}; 
     for (var allenamento in storico) {
       for (var es in allenamento.scheda.esercizi) {
-        if (es.serieAttive.any((s) => s.isCompletata && s.peso.isNotEmpty)) {
+        bool ignoraPerGrafico = es.tecniche.contains('Back off') || es.tecniche.contains('Drop Set') || es.tecniche.contains('Stripping');
+        if (ignoraPerGrafico) continue;
+
+        if (es.serieAttive.any((s) => s.isCompletata && s.peso.isNotEmpty && s.tipo != 'Avvicinamento')) {
           String nomeTradotto = _traduciNome(es.nome);
           nomiUnivoci[_normalizzaNome(nomeTradotto)] = nomeTradotto.trim();
         }
@@ -213,7 +216,13 @@ class _ProfiloScreenState extends State<ProfiloScreen> with SingleTickerProvider
     List<String> listaNomi = nomiUnivoci.values.toList();
     listaNomi.sort();
     nomiEserciziGrafico = listaNomi;
-    if (nomiEserciziGrafico.isNotEmpty && esercizioSelezionato == null) {
+
+    if (nomiEserciziGrafico.isEmpty) {
+      esercizioSelezionato = null;
+      return;
+    }
+
+    if (esercizioSelezionato == null || !nomiEserciziGrafico.contains(esercizioSelezionato)) {
       esercizioSelezionato = nomiEserciziGrafico.first;
     }
   }
@@ -551,8 +560,21 @@ class _ProfiloScreenState extends State<ProfiloScreen> with SingleTickerProvider
               ),
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<String>(
-                  value: esercizioSelezionato, isDense: true,
-                  items: nomiEserciziGrafico.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+                  value: esercizioSelezionato,
+                  isDense: true,
+                  isExpanded: true,
+                  items: nomiEserciziGrafico
+                      .map(
+                        (e) => DropdownMenuItem(
+                          value: e,
+                          child: Text(
+                            e,
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
+                        ),
+                      )
+                      .toList(),
                   onChanged: (v) => setState(() => esercizioSelezionato = v),
                 ),
               ),

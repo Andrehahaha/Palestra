@@ -21,7 +21,6 @@ import 'storico_screen.dart';
 import 'crea_scheda.dart';
 import 'crea_esercizio.dart';
 import 'pr_mode_screen.dart';
-import 'dolore_screen.dart';
 
 part 'workouts_screen_actions.dart';
 part 'workouts_screen_view.dart';
@@ -43,7 +42,10 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
 
   String _zonaStretchingSelezionata = 'Lombare';
 
-  void _updateState(VoidCallback callback) => setState(callback);
+  void _updateState(VoidCallback callback) {
+    if (!mounted) return;
+    setState(callback);
+  }
 
   void _onZonaCondivisaChanged() {
     if (!mounted) return;
@@ -78,7 +80,9 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
         if (!giaPresente) {
           final schedaDalCoach = Scheda.fromJson(data);
           schedaDalCoach.categoria = 'Dal Coach 🐯'; 
-          setState(() { mieSchede.add(schedaDalCoach); });
+          _updateState(() {
+            mieSchede.add(schedaDalCoach);
+          });
           nuoveSchede++;
         }
       }
