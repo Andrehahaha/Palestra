@@ -288,6 +288,47 @@ class LogAtletaSpecificoScreen extends StatelessWidget {
 
   const LogAtletaSpecificoScreen({super.key, required this.atletaId, required this.atletaEmail});
 
+  Widget _buildListaLog(BuildContext context, List<Map<String, dynamic>> logs) {
+    if (logs.isEmpty) {
+      return const Center(
+        child: Text(
+          "Nessun allenamento completato negli ultimi 30 giorni.",
+          style: TextStyle(color: Colors.grey, fontSize: 16),
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(8),
+      itemCount: logs.length,
+      itemBuilder: (context, index) {
+        final log = logs[index];
+        final bool hasFeedback =
+            log['feedback_atleta'] != null && log['feedback_atleta'].toString().trim().isNotEmpty;
+
+        return Card(
+          child: ListTile(
+            leading: const Icon(Icons.fitness_center, color: Colors.deepOrange),
+            title: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    log['nomeScheda'] ?? 'Allenamento',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                if (hasFeedback) const Icon(Icons.chat_bubble, color: Colors.amber, size: 16),
+              ],
+            ),
+            subtitle: Text("Data: ${log['data'].toString().split('T')[0]}"),
+            trailing: const Icon(Icons.visibility, color: Colors.grey),
+            onTap: () => _mostraDettaglioLog(context, log),
+          ),
+        );
+      },
+    );
+  }
+
   void _mostraDettaglioLog(BuildContext context, Map<String, dynamic> log) {
     showModalBottomSheet(
       context: context,
@@ -376,48 +417,65 @@ class LogAtletaSpecificoScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final currentCoachId = FirebaseAuth.instance.currentUser?.uid;
     final DateTime dataLimite = DateTime.now().subtract(const Duration(days: 30));
     final String dataLimiteStr = dataLimite.toIso8601String();
 
+    if (currentCoachId == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text("Storico (Ultimi 30 gg)")),
+        body: const Center(
+          child: Text('Sessione scaduta. Rientra come coach.'),
+        ),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(title: const Text("Storico (Ultimi 30 gg)")),
-      body: StreamBuilder<QuerySnapshot>(
+      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: FirebaseFirestore.instance
-            .collection('storico_atleti')
-            .where('atletaId', isEqualTo: atletaId) 
-            .where('data', isGreaterThanOrEqualTo: dataLimiteStr) 
-            .orderBy('data', descending: true)
+            .collection('coaches')
+            .doc(currentCoachId)
+            .collection('athletes')
+            .doc(atletaId)
+            .collection('progress')
+            .where('sessionAt', isGreaterThanOrEqualTo: Timestamp.fromDate(dataLimite))
+            .orderBy('sessionAt', descending: true)
             .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-          
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-             return const Center(child: Text("Nessun allenamento completato negli ultimi 30 giorni.", style: TextStyle(color: Colors.grey, fontSize: 16)));
+        builder: (context, snapshotNuovoSchema) {
+          if (snapshotNuovoSchema.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
           }
 
-          final logs = snapshot.data!.docs;
-          return ListView.builder(
-            padding: const EdgeInsets.all(8),
-            itemCount: logs.length,
-            itemBuilder: (context, index) {
-              var log = logs[index].data() as Map<String, dynamic>;
-              
-              bool hasFeedback = log['feedback_atleta'] != null && log['feedback_atleta'].toString().trim().isNotEmpty;
+          final nuoviLogs = snapshotNuovoSchema.data?.docs
+                  .map((doc) => doc.data())
+                  .where((log) => (log['data'] ?? '').toString().isNotEmpty)
+                  .toList() ??
+              const <Map<String, dynamic>>[];
 
-              return Card(
-                child: ListTile(
-                  leading: const Icon(Icons.fitness_center, color: Colors.deepOrange),
-                  title: Row(
-                    children: [
-                      Expanded(child: Text(log['nomeScheda'] ?? 'Allenamento', style: const TextStyle(fontWeight: FontWeight.bold))),
-                      if (hasFeedback) const Icon(Icons.chat_bubble, color: Colors.amber, size: 16), 
-                    ],
-                  ),
-                  subtitle: Text("Data: ${log['data'].toString().split('T')[0]}"),
-                  trailing: const Icon(Icons.visibility, color: Colors.grey),
-                  onTap: () => _mostraDettaglioLog(context, log),
-                ),
-              );
+          if (nuoviLogs.isNotEmpty) {
+            return _buildListaLog(context, nuoviLogs);
+          }
+
+          // Fallback compatibile con storico precedente durante la migrazione.
+          return StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('storico_atleti')
+                .where('atletaId', isEqualTo: atletaId)
+                .where('data', isGreaterThanOrEqualTo: dataLimiteStr)
+                .orderBy('data', descending: true)
+                .snapshots(),
+            builder: (context, snapshotLegacy) {
+              if (snapshotLegacy.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+
+              final legacyLogs = snapshotLegacy.data?.docs
+                      .map((doc) => doc.data() as Map<String, dynamic>)
+                      .toList() ??
+                  const <Map<String, dynamic>>[];
+
+              return _buildListaLog(context, legacyLogs);
             },
           );
         },

@@ -1,0 +1,8 @@
+name = "tiger-ai-proxy"
+main = "src/index.js"
+compatibility_date = "2026-03-23"
+
+[vars]
+FIREBASE_PROJECT_ID = "palestrai-5856f"
+
+# Set with: wrangler secret put GEMINI_API_KEY

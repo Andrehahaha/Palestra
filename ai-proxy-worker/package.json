@@ -1,0 +1,16 @@
+{
+  "name": "tiger-ai-proxy-worker",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.10.0"
+  },
+  "dependencies": {
+    "jose": "^5.9.6"
+  }
+}

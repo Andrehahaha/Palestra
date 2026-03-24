@@ -14,6 +14,7 @@ import '../models/serie.dart';
 import 'crea_esercizio.dart';
 import '../services/api_esercizi.dart';
 import '../services/dizionario_esercizi.dart';
+import '../services/athlete_progress_service.dart';
 
 // ============================================================================
 // SCHERMATA DETTAGLIO ALLENAMENTO (CORE DELL'APP)
@@ -31,6 +32,7 @@ class DettaglioSchedaScreen extends StatefulWidget {
 class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with WidgetsBindingObserver {
   List<Map<String, dynamic>> _databaseEsercizi = [];
   Timer? _bozzaDebounce;
+  final AthleteProgressService _athleteProgressService = AthleteProgressService();
 
   String get _bozzaKey => 'workout_bozza_${widget.scheda.nome}';
 
@@ -283,8 +285,25 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
         Map<String, dynamic> datiCloud = nuovoAllenamento.toJson();
         datiCloud['atletaId'] = user.uid;
         datiCloud['atletaEmail'] = user.email;
+        final coachId = await _caricaCoachIdAtleta(user.uid);
+        if (coachId != null && coachId.isNotEmpty) {
+          datiCloud['coachId'] = coachId;
+        }
         
         await FirebaseFirestore.instance.collection('storico_atleti').add(datiCloud);
+
+        if (coachId != null && coachId.isNotEmpty) {
+          try {
+            await _athleteProgressService.saveProgressEntry(
+              coachId: coachId,
+              athleteId: user.uid,
+              payload: datiCloud,
+              sessionAt: nuovoAllenamento.data,
+            );
+          } catch (e) {
+            debugPrint('Sync nuovo schema progress fallita: $e');
+          }
+        }
       }
 
       if (!mounted) return;
@@ -305,6 +324,19 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Errore durante il salvataggio: $e'), backgroundColor: Colors.red)
       );
+    }
+  }
+
+  Future<String?> _caricaCoachIdAtleta(String atletaId) async {
+    try {
+      final doc = await FirebaseFirestore.instance.collection('users').doc(atletaId).get();
+      if (!doc.exists) return null;
+      final data = doc.data();
+      final coachId = data?['coachId']?.toString().trim() ?? '';
+      return coachId.isEmpty ? null : coachId;
+    } catch (e) {
+      debugPrint('Impossibile leggere coachId atleta: $e');
+      return null;
     }
   }
 
