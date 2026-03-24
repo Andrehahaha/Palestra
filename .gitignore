@@ -43,6 +43,14 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Node / Cloudflare Worker artifacts
+**/node_modules/
+**/.wrangler/
+**/dist/
+**/.dev.vars
+**/.dev.vars.*
+
 # Chiavi segrete e variabili d'ambiente
 .env
 .env*

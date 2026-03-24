@@ -176,6 +176,40 @@ class _ProfiloScreenState extends State<ProfiloScreen> with SingleTickerProvider
   Future<void> _sincronizzaCloud() async {
     if (userId.isEmpty) return;
     try {
+      QuerySnapshot<Map<String, dynamic>>? snapshotNuovoSchema;
+      final coachId = await _caricaCoachIdAtleta(userId);
+
+      if (coachId != null && coachId.isNotEmpty) {
+        snapshotNuovoSchema = await FirebaseFirestore.instance
+            .collection('coaches')
+            .doc(coachId)
+            .collection('athletes')
+            .doc(userId)
+            .collection('progress')
+            .orderBy('sessionAt', descending: true)
+            .get();
+      }
+
+      final docsNuovoSchema = snapshotNuovoSchema?.docs ?? const <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+      if (docsNuovoSchema.isNotEmpty) {
+        List<Allenamento> storicoCloud = docsNuovoSchema
+            .map((doc) => Allenamento.fromJson(doc.data()))
+            .toList();
+
+        if (storicoCloud.length > storico.length) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('storico_salvato', jsonEncode(storicoCloud.map((e) => e.toJson()).toList()));
+          if (mounted) {
+            setState(() {
+              storico = storicoCloud;
+              _aggiornaInterfacciaGrafici();
+            });
+          }
+        }
+        return;
+      }
+
+      // Fallback legacy per dati storici non ancora migrati.
       final snapshot = await FirebaseFirestore.instance
           .collection('storico_atleti')
           .where('atletaId', isEqualTo: userId)
@@ -197,6 +231,18 @@ class _ProfiloScreenState extends State<ProfiloScreen> with SingleTickerProvider
       }
     } catch (e) {
       debugPrint("Sincronizzazione fallita: $e");
+    }
+  }
+
+  Future<String?> _caricaCoachIdAtleta(String atletaId) async {
+    try {
+      final doc = await FirebaseFirestore.instance.collection('users').doc(atletaId).get();
+      if (!doc.exists) return null;
+      final coachId = doc.data()?['coachId']?.toString().trim() ?? '';
+      return coachId.isEmpty ? null : coachId;
+    } catch (e) {
+      debugPrint('CoachId non disponibile: $e');
+      return null;
     }
   }
 

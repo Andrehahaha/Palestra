@@ -5,22 +5,76 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isOwner(uidField) {
-      return isSignedIn() && request.auth.uid == uidField;
+    function isSelf(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isCoachOfAthlete(athleteId) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(athleteId))
+        && get(/databases/$(database)/documents/users/$(athleteId)).data.coachId == request.auth.uid;
+    }
+
+    function canClaimAthlete(userId) {
+      return isSignedIn()
+        && request.auth.uid != userId
+        && resource.data.ruolo == 'atleta'
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly(['coachId'])
+        && request.resource.data.coachId == request.auth.uid
+        && (!('coachId' in resource.data) || resource.data.coachId == null || resource.data.coachId == '');
     }
 
     match /users/{userId} {
-      allow read, write: if isSignedIn() && request.auth.uid == userId;
+      allow create: if isSelf(userId);
+      allow read: if isSelf(userId) || (isSignedIn() && resource.data.coachId == request.auth.uid);
+      allow update: if isSelf(userId) || canClaimAthlete(userId);
+      allow delete: if isSelf(userId);
     }
 
     match /storico_atleti/{docId} {
       allow create: if isSignedIn() && request.resource.data.atletaId == request.auth.uid;
-      allow read, update, delete: if isSignedIn() && resource.data.atletaId == request.auth.uid;
+      allow read, update, delete: if isSignedIn() && (
+        resource.data.atletaId == request.auth.uid
+        || resource.data.coachId == request.auth.uid
+        || isCoachOfAthlete(resource.data.atletaId)
+      );
     }
 
     match /schede_assegnate/{docId} {
-      allow read: if isSignedIn() && resource.data.atletaId == request.auth.uid;
-      allow create, update, delete: if false;
+      allow read: if isSignedIn() && (
+        resource.data.atletaId == request.auth.uid
+        || resource.data.coachId == request.auth.uid
+        || resource.data.assegnataDa == request.auth.uid
+      );
+      allow create: if isSignedIn() && (
+        request.resource.data.coachId == request.auth.uid
+        || request.resource.data.assegnataDa == request.auth.uid
+      );
+      allow update, delete: if isSignedIn() && (
+        resource.data.coachId == request.auth.uid
+        || resource.data.assegnataDa == request.auth.uid
+      );
+    }
+
+    match /libreria_coach/{coachId}/schede/{schedaId} {
+      allow read, write: if isSelf(coachId);
+    }
+
+    // Nuovo schema consigliato per sync progressi coach -> atleta
+    match /coaches/{coachId}/athletes/{athleteId} {
+      allow read: if isSignedIn() && (request.auth.uid == coachId || request.auth.uid == athleteId);
+      allow create, update, delete: if isSignedIn() && request.auth.uid == coachId;
+
+      match /progress/{progressId} {
+        allow read: if isSignedIn() && (request.auth.uid == coachId || request.auth.uid == athleteId);
+        allow create, update, delete: if isSignedIn() && (request.auth.uid == coachId || request.auth.uid == athleteId);
+      }
+
+      match /stats/{docId} {
+        allow read: if isSignedIn() && (request.auth.uid == coachId || request.auth.uid == athleteId);
+        allow create, update: if isSignedIn() && (request.auth.uid == coachId || request.auth.uid == athleteId);
+        allow delete: if isSignedIn() && request.auth.uid == coachId;
+      }
     }
 
     // Deny by default

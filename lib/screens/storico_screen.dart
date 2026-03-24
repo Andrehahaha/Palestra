@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/allenamento.dart';
 import '../services/dizionario_esercizi.dart'; 
+import '../services/athlete_progress_service.dart';
 
 class StoricoScreen extends StatefulWidget {
   final List<Allenamento> storico;
@@ -16,11 +17,40 @@ class StoricoScreen extends StatefulWidget {
 
 class _StoricoScreenState extends State<StoricoScreen> {
 
+  Future<String?> _caricaCoachIdAtleta(String atletaId) async {
+    try {
+      final doc = await FirebaseFirestore.instance.collection('users').doc(atletaId).get();
+      if (!doc.exists) return null;
+      final coachId = doc.data()?['coachId']?.toString().trim() ?? '';
+      return coachId.isEmpty ? null : coachId;
+    } catch (e) {
+      debugPrint("Errore lettura coachId: $e");
+      return null;
+    }
+  }
+
   // 👇 FUNZIONE CHE ELIMINA DAL CLOUD
   Future<void> _eliminaDaCloud(Allenamento allenamento) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
     try {
+      final coachId = await _caricaCoachIdAtleta(user.uid);
+      if (coachId != null && coachId.isNotEmpty) {
+        final progressDocId = AthleteProgressService.buildDateKey(allenamento.data);
+        final progressRef = FirebaseFirestore.instance
+            .collection('coaches')
+            .doc(coachId)
+            .collection('athletes')
+            .doc(user.uid)
+            .collection('progress')
+            .doc(progressDocId);
+
+        final progressDoc = await progressRef.get();
+        if (progressDoc.exists) {
+          await progressRef.delete();
+        }
+      }
+
       final snapshot = await FirebaseFirestore.instance
           .collection('storico_atleti')
           .where('atletaId', isEqualTo: user.uid)
