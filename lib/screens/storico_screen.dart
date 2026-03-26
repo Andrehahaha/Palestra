@@ -67,16 +67,17 @@ class _StoricoScreenState extends State<StoricoScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final storicoInvertito = widget.storico.reversed.toList();
+    final storicoRecentePrima = List<Allenamento>.from(widget.storico)
+      ..sort((a, b) => b.data.compareTo(a.data));
 
     return Scaffold(
       appBar: AppBar(title: const Text('Storico Allenamenti')),
-      body: storicoInvertito.isEmpty
+      body: storicoRecentePrima.isEmpty
           ? const Center(child: Text('Nessun allenamento completato. Inizia ad allenarti!'))
           : ListView.builder(
-              itemCount: storicoInvertito.length,
+              itemCount: storicoRecentePrima.length,
               itemBuilder: (context, index) {
-                final allenamento = storicoInvertito[index];
+                final allenamento = storicoRecentePrima[index];
                 final d = allenamento.data;
                 final dataFormat = '${d.day}/${d.month}/${d.year} - ${d.hour}:${d.minute.toString().padLeft(2, '0')}';
 

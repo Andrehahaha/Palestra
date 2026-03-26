@@ -17,6 +17,8 @@ class _CreaSchedaScreenState extends State<CreaSchedaScreen> {
   final TextEditingController _nomeController = TextEditingController();
   final TextEditingController _categoriaController = TextEditingController();
   String _livelloSelezionato = 'Principiante';
+  bool _continuativa = true;
+  int _settimanaCorrente = 1;
   
   List<Esercizio> _eserciziAggiunti = [];
 
@@ -27,6 +29,8 @@ class _CreaSchedaScreenState extends State<CreaSchedaScreen> {
       _nomeController.text = widget.schedaDaModificare!.nome;
       _categoriaController.text = widget.schedaDaModificare!.categoria;
       _livelloSelezionato = widget.schedaDaModificare!.livello;
+      _continuativa = widget.schedaDaModificare!.continuativa;
+      _settimanaCorrente = widget.schedaDaModificare!.settimanaCorrente;
       _eserciziAggiunti = List.from(widget.schedaDaModificare!.esercizi); 
     }
   }
@@ -78,6 +82,21 @@ class _CreaSchedaScreenState extends State<CreaSchedaScreen> {
                   items: ['Principiante', 'Intermedio', 'Avanzato'].map((l) => DropdownMenuItem(value: l, child: Text(l))).toList(),
                   onChanged: (val) => setState(() => _livelloSelezionato = val!),
                 ),
+                const SizedBox(height: 12),
+                SwitchListTile.adaptive(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Scheda continuativa'),
+                  subtitle: const Text('Se attiva, la scheda non ha scadenza e procede per settimane progressive.'),
+                  value: _continuativa,
+                  onChanged: (value) => setState(() => _continuativa = value),
+                ),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Settimana corrente: $_settimanaCorrente',
+                    style: const TextStyle(color: Colors.grey),
+                  ),
+                ),
               ],
             ),
           ),
@@ -126,6 +145,8 @@ class _CreaSchedaScreenState extends State<CreaSchedaScreen> {
                     nome: _nomeController.text,
                     livello: _livelloSelezionato,
                     categoria: _categoriaController.text.isEmpty ? 'Generale' : _categoriaController.text,
+                    continuativa: _continuativa,
+                    settimanaCorrente: _settimanaCorrente,
                     esercizi: _eserciziAggiunti, 
                   );
                   Navigator.pop(context, nuovaScheda);

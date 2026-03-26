@@ -6,7 +6,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/allenamento.dart';
+import '../models/scheda.dart';
 import '../services/dolore_data.dart';
+import '../services/workload_calculator.dart';
 
 // ============================================================================
 // SCHERMATA MODALITÀ PR
@@ -82,6 +84,210 @@ class _PRModeScreenState extends State<PRModeScreen> {
     return es; 
   }
 
+  List<String> _prAliasesForExercise(String canonicalName) {
+    final lowered = canonicalName.toLowerCase();
+    if (lowered == 'panca piana') {
+      return const [
+        'Panca Piana',
+        'Panca piana con bilanciere(presa media)',
+        'Panca piana con bilanciere - presa media',
+        'Panca piana con bilanciere (presa media)',
+      ];
+    }
+    if (lowered == 'squat') {
+      return const [
+        'Squat',
+        'Squat Completo con Bilanciere',
+        'Squat completo con bilanciere',
+      ];
+    }
+    if (lowered == 'stacco da terra') {
+      return const [
+        'Stacco da Terra',
+        'Stacco da Terra con Bilanciere',
+        'Stacco da terra con bilanciere',
+      ];
+    }
+    return [canonicalName];
+  }
+
+  String _norm(String value) {
+    return value
+        .toLowerCase()
+        .trim()
+        .replaceAll('à', 'a')
+        .replaceAll('è', 'e')
+        .replaceAll('é', 'e')
+        .replaceAll('ì', 'i')
+        .replaceAll('ò', 'o')
+        .replaceAll('ù', 'u')
+        .replaceAll(RegExp(r'[^a-z0-9\s]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  String _big3Key(String nome) {
+    final n = _norm(nome);
+    final isPancaBilancierePresaMedia =
+        n.contains('panca') && n.contains('bilanciere') && n.contains('presa media');
+    final isSquatCompletoBilanciere =
+        n.contains('squat') && n.contains('completo') && n.contains('bilanciere');
+    final isStaccoBilanciere = n.contains('stacco') && n.contains('bilanciere');
+    final isStaccoConventional = n.contains('conventional') && n.contains('deadlift');
+    if (n.contains('panca piana') || n.contains('bench press') || n == 'panca' || isPancaBilancierePresaMedia) {
+      return 'panca piana';
+    }
+    if (n == 'squat' || n.contains('back squat') || isSquatCompletoBilanciere) return 'squat';
+    if (n.contains('stacco da terra') || n.contains('deadlift') || n == 'stacco' || isStaccoBilanciere || isStaccoConventional) return 'stacco da terra';
+    return '';
+  }
+
+  Future<void> _aggiornaCarichiPercentualiRetroattivi({
+    required String esercizioSelezionato,
+    required double nuovoPrKg,
+  }) async {
+    final targetKey = _big3Key(_getNomeEsteso(esercizioSelezionato));
+    if (targetKey.isEmpty || nuovoPrKg <= 0) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    final schedeJson = prefs.getString('schede_salvate');
+    if (schedeJson == null) return;
+
+    final decoded = jsonDecode(schedeJson);
+    if (decoded is! List) return;
+
+    final schede = decoded
+        .whereType<Map>()
+        .map((e) => Scheda.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+
+    bool changed = false;
+
+    for (final scheda in schede) {
+      for (final es in scheda.esercizi) {
+        if (es.modalitaIntensita != 'percentuale') continue;
+        if (_big3Key(es.nome) != targetKey) continue;
+
+        final oldRm = es.massimaleKg;
+        es.massimaleKg = nuovoPrKg;
+        changed = true;
+
+        final percEsercizio = es.percentualeMassimale;
+        if (percEsercizio != null && percEsercizio > 0) {
+          es.caricoTargetKg = WorkloadCalculator.calculateFromMaxAndPercentage(
+            oneRepMax: nuovoPrKg,
+            percentage: percEsercizio,
+          );
+        }
+
+        for (final serie in es.serieAttive.where((s) => s.tipo != 'Avvicinamento')) {
+          final percSerie = double.tryParse(serie.percentualeTarget.replaceAll(',', '.'));
+          final percToUse = (percSerie != null && percSerie > 0)
+              ? percSerie
+              : (percEsercizio ?? 0);
+
+          if (percToUse <= 0) continue;
+
+          if (serie.percentualeTarget.trim().isEmpty) {
+            serie.percentualeTarget = percToUse.toStringAsFixed(percToUse % 1 == 0 ? 0 : 1);
+            changed = true;
+          }
+
+          final carico = WorkloadCalculator.calculateFromMaxAndPercentage(
+            oneRepMax: nuovoPrKg,
+            percentage: percToUse,
+          );
+          final pesoEsistente = double.tryParse(serie.peso.replaceAll(',', '.'));
+          final oldAutoCarico = oldRm != null && oldRm > 0
+              ? WorkloadCalculator.calculateFromMaxAndPercentage(
+                  oneRepMax: oldRm,
+                  percentage: percToUse,
+                )
+              : null;
+
+          // Aggiorna solo se vuoto o se il peso attuale coincide con il vecchio auto-calcolo.
+          final isAutoOld = oldAutoCarico != null &&
+              pesoEsistente != null &&
+              (pesoEsistente - oldAutoCarico).abs() <= 0.26;
+          if (serie.peso.trim().isEmpty || isAutoOld) {
+            final nuovoPeso = carico.toStringAsFixed(1);
+            if (serie.peso != nuovoPeso) {
+              serie.peso = nuovoPeso;
+              changed = true;
+            }
+          }
+        }
+      }
+    }
+
+    if (!changed) return;
+
+    await prefs.setString(
+      'schede_salvate',
+      jsonEncode(schede.map((s) => s.toJson()).toList()),
+    );
+
+    await _sincronizzaSchedeRetroattiveSuCloud(schede);
+  }
+
+  Future<void> _sincronizzaSchedeRetroattiveSuCloud(List<Scheda> schede) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+        'app_state': {
+          'schede_salvate': schede.map((s) => s.toJson()).toList(),
+          'updated_at': FieldValue.serverTimestamp(),
+        },
+      }, SetOptions(merge: true));
+    } catch (e) {
+      debugPrint('Errore sync retroattivo schede cloud: $e');
+    }
+  }
+
+  double _readPrForSelection(String shortExerciseName) {
+    final canonical = _getNomeEsteso(shortExerciseName);
+    final aliases = _prAliasesForExercise(canonical);
+
+    final manuale = prManuali[shortExerciseName];
+    if (manuale != null && manuale > 0) return manuale;
+
+    final shortNorm = _norm(shortExerciseName);
+    for (final entry in prManuali.entries) {
+      if (_norm(entry.key) == shortNorm && entry.value > 0) {
+        return entry.value;
+      }
+    }
+
+    for (final alias in aliases) {
+      final value = iMieiPRStorici[alias];
+      if (value != null && value > 0) return value;
+    }
+
+    final aliasNorms = aliases.map(_norm).toList();
+    for (final entry in iMieiPRStorici.entries) {
+      final keyNorm = _norm(entry.key);
+      final value = entry.value;
+      if (value <= 0) continue;
+      if (aliasNorms.any((a) => keyNorm == a || keyNorm.contains(a) || a.contains(keyNorm))) {
+        return value;
+      }
+    }
+
+    final big3Canonical = _big3Key(canonical);
+    if (big3Canonical.isNotEmpty) {
+      for (final entry in iMieiPRStorici.entries) {
+        final keyNorm = _norm(entry.key);
+        if ((keyNorm == big3Canonical || keyNorm.contains(big3Canonical)) && entry.value > 0) {
+          return entry.value;
+        }
+      }
+    }
+
+    return 0.0;
+  }
+
   Future<void> _caricaDatiMemoria() async {
     final prefs = await SharedPreferences.getInstance();
 
@@ -121,7 +327,7 @@ class _PRModeScreenState extends State<PRModeScreen> {
     _aggiornaUI();
     
     setState(() {
-      _prInizialeSessione = prManuali[_esercizioSelezionato] ?? iMieiPRStorici[_getNomeEsteso(_esercizioSelezionato)] ?? 0.0;
+      _prInizialeSessione = _readPrForSelection(_esercizioSelezionato);
     });
   }
 
@@ -217,18 +423,27 @@ class _PRModeScreenState extends State<PRModeScreen> {
     }
   }
 
-  Future<void> _salvaPRManuale(String es, double peso, {bool sincronizzaCloud = false}) async {
+  Future<void> _salvaPRManuale(String es, double peso, {bool sincronizzaCloud = true}) async {
     prManuali[es] = peso;
     String nomeEsteso = _getNomeEsteso(es);
-    iMieiPRStorici[nomeEsteso] = peso; 
+    for (final alias in _prAliasesForExercise(nomeEsteso)) {
+      iMieiPRStorici[alias] = peso;
+    }
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('pr_manuali_salvati', jsonEncode(prManuali));
 
     String? prJson = prefs.getString('personal_records');
     Map<String, dynamic> prGlobali = prJson != null ? jsonDecode(prJson) : {};
-    prGlobali[nomeEsteso] = peso;
+    for (final alias in _prAliasesForExercise(nomeEsteso)) {
+      prGlobali[alias] = peso;
+    }
     await prefs.setString('personal_records', jsonEncode(prGlobali));
+
+    await _aggiornaCarichiPercentualiRetroattivi(
+      esercizioSelezionato: es,
+      nuovoPrKg: peso,
+    );
 
     final user = FirebaseAuth.instance.currentUser;
     if (sincronizzaCloud && user != null) {
@@ -244,8 +459,7 @@ class _PRModeScreenState extends State<PRModeScreen> {
   }
 
   void _aggiornaUI() {
-    String nomeEsteso = _getNomeEsteso(_esercizioSelezionato);
-    double pesoCaricato = prManuali[_esercizioSelezionato] ?? iMieiPRStorici[nomeEsteso] ?? 0.0;
+    double pesoCaricato = _readPrForSelection(_esercizioSelezionato);
     
     setState(() {
       if (pesoCaricato > 0) {
@@ -641,7 +855,7 @@ class _PRModeScreenState extends State<PRModeScreen> {
                       _aggiornaUI();
                       
                       setState(() {
-                        _prInizialeSessione = prManuali[_esercizioSelezionato] ?? iMieiPRStorici[_getNomeEsteso(_esercizioSelezionato)] ?? 0.0;
+                        _prInizialeSessione = _readPrForSelection(_esercizioSelezionato);
                       });
                     },
                     selectedColor: Colors.deepOrange,
@@ -666,10 +880,10 @@ class _PRModeScreenState extends State<PRModeScreen> {
                   suffixIcon: IconButton(
                     icon: const Icon(Icons.save, color: Colors.greenAccent),
                     tooltip: 'Salva il peso sul bilanciere come Massimale',
-                    onPressed: () {
+                    onPressed: () async {
                       double p = pesoSelezionatoPerBilanciere; 
                       if (p > 0) {
-                        _salvaPRManuale(_esercizioSelezionato, p);
+                        await _salvaPRManuale(_esercizioSelezionato, p, sincronizzaCloud: true);
                         setState(() { 
                           _prInizialeSessione = p; 
                           _maxController.text = p == p.truncateToDouble() ? p.toInt().toString() : p.toString();

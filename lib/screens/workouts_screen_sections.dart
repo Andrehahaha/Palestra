@@ -1,6 +1,25 @@
 part of 'workouts_screen.dart';
 
 extension _WorkoutsScreenSections on _WorkoutsScreenState {
+  Future<void> _apriSettimanaSuccessiva(Scheda scheda) async {
+    final aggiornata = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => SettimanaSuccessivaScreen(scheda: scheda)),
+    );
+
+    if (aggiornata is Scheda && mounted) {
+      _updateState(() {});
+      await _salvaDati();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Progressione applicata alla settimana ${aggiornata.settimanaCorrente}.'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
+  }
+
   Map<String, List<Scheda>> _raggruppaSchedePerCategoria() {
     final Map<String, List<Scheda>> schedeRaggruppate = {};
     for (var scheda in mieSchede) {
@@ -249,10 +268,18 @@ extension _WorkoutsScreenSections on _WorkoutsScreenState {
       child: ListTile(
         leading: const CircleAvatar(child: Icon(Icons.list_alt)),
         title: Text(scheda.nome, style: const TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: Text('${scheda.esercizi.length} esercizi • ${scheda.livello}\n(Tieni premuto per spostare)'),
+        subtitle: Text(
+          '${scheda.esercizi.length} esercizi • ${scheda.livello} • W${scheda.settimanaCorrente}\n'
+          '${scheda.continuativa ? 'Continuativa' : 'Non continuativa'} • (Tieni premuto per spostare)',
+        ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            IconButton(
+              icon: const Icon(Icons.skip_next, size: 20, color: Colors.greenAccent),
+              tooltip: 'Settimana successiva',
+              onPressed: () => _apriSettimanaSuccessiva(scheda),
+            ),
             IconButton(
               icon: const Icon(Icons.edit, size: 20, color: Colors.orangeAccent),
               tooltip: 'Rinomina scheda',

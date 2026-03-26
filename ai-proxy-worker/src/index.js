@@ -90,6 +90,15 @@ function extractModelText(geminiResp) {
   return parts.map((p) => p?.text || '').join('');
 }
 
+function extractJsonPayload(raw) {
+  const trimmed = (raw || '').trim();
+  if (!trimmed) return '';
+
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (fenced?.[1]) return fenced[1].trim();
+  return trimmed;
+}
+
 function buildAnalyzePrompt(nomiUfficiali) {
   return `Sei un personal trainer esperto in protocolli di forza e bodybuilding. Analizza questa immagine che contiene una scheda di allenamento.
 
@@ -110,12 +119,33 @@ REGOLE PER LE TECNICHE:
 REGOLE PER L'RPE:
 Se nella foto per un esercizio è indicato un valore come @8, RPE 8, RIR 2, estrai solo il numero.
 
+REGOLE PER LE NUOVE MODALITA:
+- Ogni scheda deve avere:
+  - "continuativa": true
+  - "settimanaCorrente": 1
+- Ogni esercizio deve avere "modalitaIntensita":
+  - usa "rir" se trovi indicazioni RIR/RPE
+  - usa "percentuale" se trovi % o riferimento al massimale
+- Se modalitaIntensita = "rir", compila "rirTarget" (solo numero o stringa breve)
+- Se modalitaIntensita = "percentuale", compila quando possibile:
+  - "percentualeMassimale" (numero)
+  - "massimaleKg" (numero, se presente nel testo)
+  - "caricoTargetKg" (numero, se già esplicitato)
+
+REGOLE SPECIFICHE BIG 3 (OBBLIGATORIO):
+- Per "Panca Piana", "Squat" e "Stacco da Terra" (o equivalenti inglesi), se trovi una percentuale tipo 75%, 82.5%, @70%, devi sempre compilare:
+  - "modalitaIntensita": "percentuale"
+  - "percentualeMassimale": numero della percentuale
+- Se nello stesso testo trovi anche il massimale (es. 1RM 120kg), compila anche "massimaleKg".
+
 STRUTTURA JSON:
 [
   {
     "nome": "Nome Scheda - Giorno 1",
     "livello": "Intermedio",
     "categoria": "Importata AI",
+    "continuativa": true,
+    "settimanaCorrente": 1,
     "esercizi": [
       {
         "nome": "NOME PRESO DALLA LISTA UFFICIALE",
@@ -124,6 +154,11 @@ STRUTTURA JSON:
         "ripetizioni": "8-10",
         "recupero": "90",
         "rpe": "8",
+        "modalitaIntensita": "rir",
+        "rirTarget": "2",
+        "percentualeMassimale": null,
+        "massimaleKg": null,
+        "caricoTargetKg": null,
         "note": "eventuali note",
         "metodo": "Classico",
         "tecniche": ["Classico"]
@@ -177,7 +212,8 @@ async function handleAnalyze(request, env) {
   });
 
   const raw = extractModelText(geminiResp);
-  const items = JSON.parse(raw);
+  const jsonPayload = extractJsonPayload(raw);
+  const items = JSON.parse(jsonPayload);
   if (!Array.isArray(items)) {
     return json(422, { error: 'Risposta AI non valida' });
   }
