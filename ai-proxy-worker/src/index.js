@@ -1,6 +1,10 @@
 import { jwtVerify, importX509 } from 'jose';
 
-const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+const GEMINI_ENDPOINTS = [
+  'https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent',
+  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
+  'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent',
+];
 const FIREBASE_CERTS_URL = 'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
 
 const corsHeaders = {
@@ -17,6 +21,22 @@ function json(status, body) {
       ...corsHeaders,
     },
   });
+}
+
+class AuthError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'AuthError';
+  }
+}
+
+class HttpError extends Error {
+  constructor(status, message, details) {
+    super(message);
+    this.name = 'HttpError';
+    this.status = status;
+    this.details = details;
+  }
 }
 
 async function getFirebaseSigningKey(kid) {
@@ -42,14 +62,14 @@ function decodeJwtHeader(token) {
 async function verifyFirebaseIdToken(request, projectId) {
   const authHeader = request.headers.get('Authorization') || '';
   if (!authHeader.startsWith('Bearer ')) {
-    throw new Error('Missing bearer token');
+    throw new AuthError('Missing bearer token');
   }
 
   const token = authHeader.slice('Bearer '.length);
   const header = decodeJwtHeader(token);
   const kid = header.kid;
   if (!kid) {
-    throw new Error('JWT kid missing');
+    throw new AuthError('JWT kid missing');
   }
 
   const key = await getFirebaseSigningKey(kid);
@@ -60,28 +80,45 @@ async function verifyFirebaseIdToken(request, projectId) {
   });
 
   if (!payload.sub) {
-    throw new Error('Invalid Firebase token subject');
+    throw new AuthError('Invalid Firebase token subject');
   }
 
   return payload;
 }
 
 async function callGemini(apiKey, requestBody) {
-  const resp = await fetch(GEMINI_ENDPOINT, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-goog-api-key': apiKey,
-    },
-    body: JSON.stringify(requestBody),
-  });
+  let fallbackLog = [];
 
-  const text = await resp.text();
-  if (!resp.ok) {
-    throw new Error(`Gemini error ${resp.status}: ${text}`);
+  for (const endpoint of GEMINI_ENDPOINTS) {
+    const resp = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey,
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    const text = await resp.text();
+    if (resp.ok) {
+      return JSON.parse(text);
+    }
+
+    fallbackLog.push(`${endpoint} -> ${resp.status}`);
+
+    const canFallback = resp.status === 404 || (resp.status === 400 && /model|unsupported|not found/i.test(text));
+    if (canFallback) {
+      continue;
+    }
+
+    throw new HttpError(resp.status, `Gemini error ${resp.status}`, text);
   }
 
-  return JSON.parse(text);
+  throw new HttpError(
+    502,
+    'Nessun endpoint Gemini compatibile disponibile',
+    fallbackLog.join(' | '),
+  );
 }
 
 function extractModelText(geminiResp) {
@@ -271,7 +308,14 @@ export default {
 
       return json(404, { error: 'Endpoint non trovato' });
     } catch (error) {
-      return json(401, { error: `Unauthorized: ${error.message}` });
+      if (error instanceof AuthError) {
+        return json(401, { error: error.message });
+      }
+      if (error instanceof HttpError) {
+        return json(error.status, { error: error.message, details: error.details });
+      }
+
+      return json(500, { error: `Errore interno proxy AI: ${error.message}` });
     }
   },
 };

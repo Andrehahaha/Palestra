@@ -65,7 +65,8 @@ extension _WorkoutsScreenSections on _WorkoutsScreenState {
               _salvaDati();
               ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${schedeImportate.length} schede importate! 🤖💪')));
             } else {
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Errore durante la scansione. Riprova! ❌')));
+              final msg = AiService.consumeLastError() ?? 'Errore durante la scansione. Riprova! ❌';
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
             }
           }
         },
