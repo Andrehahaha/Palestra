@@ -1,4 +1,5 @@
 import 'serie.dart';
+import '../services/workload_calculator.dart';
 
 class Esercizio {
   final String nome;
@@ -8,6 +9,11 @@ class Esercizio {
   final String recupero;
   final String? note;
   final List<String> tecniche; 
+  String modalitaIntensita;
+  String? rirTarget;
+  double? percentualeMassimale;
+  double? massimaleKg;
+  double? caricoTargetKg;
   List<Serie> serieAttive;
 
   Esercizio({
@@ -18,6 +24,11 @@ class Esercizio {
     required this.recupero,
     this.note,
     this.tecniche = const ['Classico'], 
+    this.modalitaIntensita = 'rir',
+    this.rirTarget,
+    this.percentualeMassimale,
+    this.massimaleKg,
+    this.caricoTargetKg,
     List<Serie>? serieAttive,
   }) : serieAttive = serieAttive ?? [];
 
@@ -30,6 +41,11 @@ class Esercizio {
       'recupero': recupero,
       'note': note,
       'tecniche': tecniche,
+      'modalitaIntensita': modalitaIntensita,
+      'rirTarget': rirTarget,
+      'percentualeMassimale': percentualeMassimale,
+      'massimaleKg': massimaleKg,
+      'caricoTargetKg': caricoTargetKg,
       'serieAttive': serieAttive.map((s) => s.toJson()).toList(),
     };
   }
@@ -51,6 +67,33 @@ class Esercizio {
       }
     }
 
+    final modalita = json['modalitaIntensita'] ?? 'rir';
+    final percentuale = _toDoubleOrNull(json['percentualeMassimale']);
+    final massimale = _toDoubleOrNull(json['massimaleKg']);
+    final caricoJson = _toDoubleOrNull(json['caricoTargetKg']);
+    final caricoCalcolato = (modalita == 'percentuale' &&
+            caricoJson == null &&
+            percentuale != null &&
+            massimale != null)
+        ? WorkloadCalculator.calculateFromMaxAndPercentage(
+            oneRepMax: massimale,
+            percentage: percentuale,
+          )
+        : caricoJson;
+
+    final serieFinali = json['serieAttive'] != null && (json['serieAttive'] as List).isNotEmpty
+        ? (json['serieAttive'] as List).map((e) => Serie.fromJson(e)).toList()
+        : serieGenerate;
+
+    if (modalita == 'percentuale' && percentuale != null) {
+      final percentText = percentuale.toStringAsFixed(percentuale % 1 == 0 ? 0 : 1);
+      for (final s in serieFinali.where((s) => s.tipo != 'Avvicinamento')) {
+        if (s.percentualeTarget.trim().isEmpty) {
+          s.percentualeTarget = percentText;
+        }
+      }
+    }
+
     return Esercizio(
       nome: json['nome'] ?? 'Esercizio',
       avvicinamento: avv,
@@ -59,9 +102,18 @@ class Esercizio {
       recupero: json['recupero'] ?? '',
       note: json['note'],
       tecniche: json['tecniche'] != null ? List<String>.from(json['tecniche']) : ['Classico'],
-      serieAttive: json['serieAttive'] != null && (json['serieAttive'] as List).isNotEmpty
-          ? (json['serieAttive'] as List).map((e) => Serie.fromJson(e)).toList()
-          : serieGenerate, 
+      modalitaIntensita: modalita,
+      rirTarget: json['rirTarget'],
+      percentualeMassimale: percentuale,
+      massimaleKg: massimale,
+      caricoTargetKg: caricoCalcolato,
+      serieAttive: serieFinali,
     );
+  }
+
+  static double? _toDoubleOrNull(dynamic value) {
+    if (value == null) return null;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value.toString());
   }
 }

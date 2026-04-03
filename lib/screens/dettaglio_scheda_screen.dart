@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:vibration/vibration.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -12,9 +13,11 @@ import '../models/allenamento.dart';
 import '../models/esercizio.dart';
 import '../models/serie.dart';
 import 'crea_esercizio.dart';
+import 'settimana_successiva_screen.dart';
 import '../services/api_esercizi.dart';
 import '../services/dizionario_esercizi.dart';
 import '../services/athlete_progress_service.dart';
+import '../services/workload_calculator.dart';
 
 // ============================================================================
 // SCHERMATA DETTAGLIO ALLENAMENTO (CORE DELL'APP)
@@ -30,18 +33,65 @@ class DettaglioSchedaScreen extends StatefulWidget {
 }
 
 class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with WidgetsBindingObserver {
+  static const String _weekHistoryStoreKey = 'week_history_store_v1';
   List<Map<String, dynamic>> _databaseEsercizi = [];
   Timer? _bozzaDebounce;
   final AthleteProgressService _athleteProgressService = AthleteProgressService();
+  final Map<int, Map<String, dynamic>> _weekSnapshots = {};
+  final Set<String> _collapsedExercises = <String>{};
+  bool _compactMode = false;
+  bool _showOnlyIncomplete = false;
 
   String get _bozzaKey => 'workout_bozza_${widget.scheda.nome}';
+
+  String get _schedaWeekHistoryKey {
+    return widget.scheda.id;
+  }
+
+  String get _legacySchedaWeekHistoryKey {
+    final n = _normalizzaTesto(widget.scheda.nome);
+    return n.replaceAll(' ', '_');
+  }
+
+  String _exerciseUiKey(Esercizio esercizio, int index) => '${esercizio.nome}_$index';
+
+  bool _isExerciseCollapsed(Esercizio esercizio, int index) {
+    return _collapsedExercises.contains(_exerciseUiKey(esercizio, index));
+  }
+
+  void _toggleExerciseCollapsed(Esercizio esercizio, int index) {
+    final key = _exerciseUiKey(esercizio, index);
+    setState(() {
+      if (_collapsedExercises.contains(key)) {
+        _collapsedExercises.remove(key);
+      } else {
+        _collapsedExercises.add(key);
+      }
+    });
+  }
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _caricaDatabase(); 
-    _caricaBozzaWorkout();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _bootstrapInitialLoad();
+    });
+  }
+
+  Future<void> _bootstrapInitialLoad() async {
+    try {
+      await Future.wait([
+        _caricaDatabase(),
+        _caricaBozzaWorkout(),
+      ]);
+
+      if (!mounted) return;
+      await _applicaPrSuSchedaAperta();
+    } catch (e, st) {
+      debugPrint('Errore bootstrap dettaglio scheda: $e');
+      debugPrintStack(stackTrace: st);
+    }
   }
 
   @override
@@ -66,14 +116,147 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
     _bozzaDebounce = Timer(const Duration(milliseconds: 500), _salvaBozzaWorkout);
   }
 
+  void _snapshotCurrentWeek() {
+    _weekSnapshots[widget.scheda.settimanaCorrente] =
+        Map<String, dynamic>.from(widget.scheda.toJson());
+  }
+
+  bool _applySnapshotForWeek(int week) {
+    final raw = _weekSnapshots[week];
+    if (raw == null) return false;
+
+    final snapshot = Scheda.fromJson(Map<String, dynamic>.from(raw));
+    // Defensive fix: if stored snapshot has mismatched week metadata,
+    // force coherence with the slot key to avoid navigation lockups.
+    if (snapshot.settimanaCorrente != week) {
+      snapshot.settimanaCorrente = week;
+    }
+    setState(() {
+      widget.scheda.nome = snapshot.nome;
+      widget.scheda.livello = snapshot.livello;
+      widget.scheda.categoria = snapshot.categoria;
+      widget.scheda.continuativa = snapshot.continuativa;
+      widget.scheda.settimanaCorrente = snapshot.settimanaCorrente;
+      widget.scheda.esercizi = snapshot.esercizi;
+    });
+    return true;
+  }
+
+  Future<void> _vaiSettimanaSuccessiva() async {
+    _snapshotCurrentWeek();
+    final targetWeek = widget.scheda.settimanaCorrente + 1;
+    if (kDebugMode) {
+      debugPrint('[WEEK] avanti tap: current=${widget.scheda.settimanaCorrente}, target=$targetWeek, snapshots=${_weekSnapshots.keys.toList()..sort()}');
+    }
+
+    if (_applySnapshotForWeek(targetWeek)) {
+      if (kDebugMode) {
+        debugPrint('[WEEK] ripristino snapshot target=$targetWeek riuscito');
+      }
+      _scheduleBozzaSave();
+      return;
+    }
+
+    final aggiornata = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => SettimanaSuccessivaScreen(scheda: widget.scheda),
+      ),
+    );
+    if (aggiornata != null) {
+      if (widget.scheda.settimanaCorrente < targetWeek) {
+        widget.scheda.settimanaCorrente = targetWeek;
+      }
+      if (kDebugMode) {
+        debugPrint('[WEEK] ritorno da schermata progressione: current=${widget.scheda.settimanaCorrente}, target=$targetWeek');
+      }
+      setState(() {});
+      _snapshotCurrentWeek();
+      _scheduleBozzaSave();
+    } else {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Progressione settimana annullata.'),
+          backgroundColor: Colors.grey,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
   Future<void> _caricaBozzaWorkout() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      final rawWeekStore = prefs.getString(_weekHistoryStoreKey);
+      if (rawWeekStore != null) {
+        final decodedStore = jsonDecode(rawWeekStore);
+        if (decodedStore is Map) {
+          dynamic perScheda = decodedStore[_schedaWeekHistoryKey];
+          final usingLegacyKey = perScheda == null;
+          perScheda ??= decodedStore[_legacySchedaWeekHistoryKey];
+          if (perScheda is Map) {
+            _weekSnapshots.clear();
+            for (final entry in perScheda.entries) {
+              final k = int.tryParse(entry.key.toString());
+              if (k == null) continue;
+              final v = entry.value;
+              if (v is Map) {
+                _weekSnapshots[k] = Map<String, dynamic>.from(v);
+              }
+            }
+            if (kDebugMode) {
+              debugPrint('[WEEK] caricati snapshot da store: key=$_schedaWeekHistoryKey weeks=${_weekSnapshots.keys.toList()..sort()} legacyFallback=$usingLegacyKey');
+            }
+
+            if (usingLegacyKey) {
+              final migrated = Map<String, dynamic>.from(decodedStore);
+              migrated[_schedaWeekHistoryKey] =
+                  _weekSnapshots.map((k, v) => MapEntry(k.toString(), v));
+              migrated.remove(_legacySchedaWeekHistoryKey);
+              await prefs.setString(_weekHistoryStoreKey, jsonEncode(migrated));
+            }
+          }
+        }
+      }
+
       final bozzaJson = prefs.getString(_bozzaKey);
-      if (bozzaJson == null || !mounted) return;
+      if (bozzaJson == null || !mounted) {
+        if (kDebugMode) {
+          debugPrint('[WEEK] nessuna bozza trovata per key=$_bozzaKey');
+        }
+        if (_weekSnapshots.isNotEmpty) {
+          final latestWeek = _weekSnapshots.keys.reduce(max);
+          if (kDebugMode) {
+            debugPrint('[WEEK] ripristino da store settimana piu recente=$latestWeek');
+          }
+          _applySnapshotForWeek(latestWeek);
+        }
+        _snapshotCurrentWeek();
+        return;
+      }
 
       final decoded = jsonDecode(bozzaJson);
       if (decoded is! Map<String, dynamic>) return;
+
+      final uiRaw = decoded['ui'];
+      if (uiRaw is Map) {
+        _compactMode = uiRaw['compactMode'] == true;
+        _showOnlyIncomplete = uiRaw['showOnlyIncomplete'] == true;
+      }
+
+      final historyRaw = decoded['weekHistory'];
+      if (historyRaw is Map) {
+        for (final entry in historyRaw.entries) {
+          final k = int.tryParse(entry.key.toString());
+          if (k == null) continue;
+          final v = entry.value;
+          if (v is Map) {
+            _weekSnapshots[k] = Map<String, dynamic>.from(v);
+          }
+        }
+      }
+
       final schedaMap = decoded['scheda'];
       if (schedaMap is! Map) return;
 
@@ -82,8 +265,22 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
         widget.scheda.nome = bozza.nome;
         widget.scheda.livello = bozza.livello;
         widget.scheda.categoria = bozza.categoria;
+        widget.scheda.continuativa = bozza.continuativa;
+        widget.scheda.settimanaCorrente = bozza.settimanaCorrente;
         widget.scheda.esercizi = bozza.esercizi;
       });
+
+      if (_weekSnapshots.isNotEmpty) {
+        final latestWeek = _weekSnapshots.keys.reduce(max);
+        if (latestWeek > widget.scheda.settimanaCorrente) {
+          if (kDebugMode) {
+            debugPrint('[WEEK] bozza piu vecchia di store: bozza=${widget.scheda.settimanaCorrente}, storeLatest=$latestWeek');
+          }
+          _applySnapshotForWeek(latestWeek);
+        }
+      }
+
+      _snapshotCurrentWeek();
     } catch (e) {
       debugPrint('Errore caricamento bozza workout: $e');
     }
@@ -91,11 +288,32 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
 
   Future<void> _salvaBozzaWorkout() async {
     try {
+      _snapshotCurrentWeek();
       final prefs = await SharedPreferences.getInstance();
+
+      final existingRaw = prefs.getString(_weekHistoryStoreKey);
+      final weekStore = <String, dynamic>{};
+      if (existingRaw != null) {
+        final decoded = jsonDecode(existingRaw);
+        if (decoded is Map<String, dynamic>) {
+          weekStore.addAll(decoded);
+        } else if (decoded is Map) {
+          weekStore.addAll(Map<String, dynamic>.from(decoded));
+        }
+      }
+      weekStore[_schedaWeekHistoryKey] =
+          _weekSnapshots.map((k, v) => MapEntry(k.toString(), v));
+      await prefs.setString(_weekHistoryStoreKey, jsonEncode(weekStore));
+
       await prefs.setString(
         _bozzaKey,
         jsonEncode({
           'scheda': widget.scheda.toJson(),
+          'weekHistory': _weekSnapshots.map((k, v) => MapEntry(k.toString(), v)),
+          'ui': {
+            'compactMode': _compactMode,
+            'showOnlyIncomplete': _showOnlyIncomplete,
+          },
           'savedAt': DateTime.now().toIso8601String(),
         }),
       );
@@ -114,11 +332,15 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
   }
 
   Future<void> _caricaDatabase() async {
-    final dati = await ApiEsercizi.ottieniEserciziTradotti();
-    if (mounted) {
-      setState(() {
-        _databaseEsercizi = dati;
-      });
+    try {
+      final dati = await ApiEsercizi.ottieniEserciziTradotti();
+      if (mounted) {
+        setState(() {
+          _databaseEsercizi = dati;
+        });
+      }
+    } catch (e) {
+      debugPrint('Errore caricamento database esercizi: $e');
     }
   }
 
@@ -131,7 +353,297 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
         .replaceAll('é', 'e')
         .replaceAll('ì', 'i')
         .replaceAll('ò', 'o')
-        .replaceAll('ù', 'u');
+        .replaceAll('ù', 'u')
+        .replaceAll(RegExp(r'[^a-z0-9\s]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  String _big3Key(String nome) {
+    final n = _normalizzaTesto(_traduciNome(nome));
+    final isPancaBilancierePresaMedia = n.contains('panca') && n.contains('bilanciere') && n.contains('presa media');
+    final isSquatCompletoBilanciere = n.contains('squat') && n.contains('completo') && n.contains('bilanciere');
+    final isStaccoBilanciere = n.contains('stacco') && n.contains('bilanciere');
+    final isStaccoConventional = n.contains('conventional') && n.contains('deadlift');
+    if (n.contains('panca piana') || n.contains('bench press') || n == 'panca' || isPancaBilancierePresaMedia) return 'Panca Piana';
+    if (n == 'squat' || n.contains('back squat') || isSquatCompletoBilanciere) return 'Squat';
+    if (n.contains('stacco da terra') || n.contains('deadlift') || n == 'stacco' || isStaccoBilanciere || isStaccoConventional) return 'Stacco da Terra';
+    return '';
+  }
+
+  List<String> _prAliasesForBig3(String canonicalDisplayName) {
+    final n = _normalizzaTesto(canonicalDisplayName);
+    if (n == 'panca piana') {
+      return const [
+        'Panca Piana',
+        'Panca piana con bilanciere(presa media)',
+        'Panca piana con bilanciere - presa media',
+        'Panca piana con bilanciere (presa media)',
+      ];
+    }
+    if (n == 'squat') {
+      return const [
+        'Squat',
+        'Squat Completo con Bilanciere',
+        'Squat completo con bilanciere',
+      ];
+    }
+    if (n == 'stacco da terra') {
+      return const [
+        'Stacco da Terra',
+        'Stacco da Terra con Bilanciere',
+        'Stacco da terra con bilanciere',
+      ];
+    }
+    return [canonicalDisplayName];
+  }
+
+  double? _toDoubleOrNull(dynamic value) {
+    if (value == null) return null;
+    if (value is num) return value.toDouble();
+    final raw = value.toString().replaceAll(',', '.').trim();
+    if (raw.isEmpty) return null;
+    return double.tryParse(raw);
+  }
+
+  double? _parsePercentInput(String raw) {
+    final cleaned = raw.replaceAll('%', '').replaceAll(',', '.').trim();
+    if (cleaned.isEmpty) return null;
+    return double.tryParse(cleaned);
+  }
+
+  bool _isAlmostEqual(double a, double b, {double tolerance = 0.26}) {
+    return (a - b).abs() <= tolerance;
+  }
+
+  double? _expectedKgForSerie(Esercizio esercizio, Serie serie) {
+    if (esercizio.modalitaIntensita != 'percentuale') return null;
+    final rm = esercizio.massimaleKg;
+    if (rm == null || rm <= 0 || serie.tipo == 'Avvicinamento') return null;
+
+    final perc = _parsePercentInput(serie.percentualeTarget) ?? esercizio.percentualeMassimale;
+    if (perc == null || perc <= 0) return null;
+
+    return WorkloadCalculator.calculateFromMaxAndPercentage(
+      oneRepMax: rm,
+      percentage: perc,
+    );
+  }
+
+  double? _extractPercentFromText(String text) {
+    final t = _normalizzaTesto(text);
+    final patterns = <RegExp>[
+      RegExp(r'(\d{1,3}(?:[\.,]\d+)?)\s*%'),
+      RegExp(r'(\d{1,3}(?:[\.,]\d+)?)\s*percento'),
+      RegExp(r'(\d{1,3}(?:[\.,]\d+)?)\s*per\s*cento'),
+      RegExp(r'al\s*(\d{1,3}(?:[\.,]\d+)?)\b'),
+      RegExp(r'at\s*(\d{1,3}(?:[\.,]\d+)?)\b'),
+    ];
+
+    for (final p in patterns) {
+      final m = p.firstMatch(t);
+      if (m == null) continue;
+      final parsed = _toDoubleOrNull(m.group(1));
+      if (parsed != null && parsed > 0 && parsed <= 110) return parsed;
+    }
+    return null;
+  }
+
+  double? _inferPercentuale(Esercizio esercizio) {
+    final existing = esercizio.percentualeMassimale;
+    if (existing != null && existing > 0) return existing;
+
+    for (final s in esercizio.serieAttive.where((x) => x.tipo != 'Avvicinamento')) {
+      final p = _toDoubleOrNull(s.percentualeTarget);
+      if (p != null && p > 0 && p <= 110) return p;
+    }
+
+    final text = '${esercizio.ripetizioni} ${esercizio.note ?? ''}';
+    return _extractPercentFromText(text);
+  }
+
+  double? _findPr(Map<String, double> prs, String exerciseName) {
+    final key = _big3Key(exerciseName);
+    if (key.isEmpty) return null;
+
+    final normKey = _normalizzaTesto(key);
+    for (final entry in prs.entries) {
+      final k = _normalizzaTesto(entry.key);
+      if (k == normKey || k.contains(normKey) || normKey.contains(k)) {
+        return entry.value;
+      }
+    }
+    return null;
+  }
+
+  Future<Map<String, double>> _caricaPrAtleta() async {
+    final out = <String, double>{};
+    final prefs = await SharedPreferences.getInstance();
+
+    final local = prefs.getString('personal_records');
+    if (local != null) {
+      try {
+        final decoded = jsonDecode(local);
+        if (decoded is Map) {
+          for (final e in decoded.entries) {
+            final v = e.value;
+            if (v is num) out[e.key.toString()] = v.toDouble();
+          }
+        }
+      } catch (e) {
+        debugPrint('PR locali corrotti/non validi: $e');
+      }
+    }
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      try {
+        final doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+        final cloud = doc.data()?['personal_records'];
+        if (cloud is Map) {
+          for (final e in cloud.entries) {
+            final v = e.value;
+            if (v is num) out[e.key.toString()] = v.toDouble();
+          }
+        }
+      } catch (_) {}
+    }
+
+    return out;
+  }
+
+  Future<void> _applicaPrSuSchedaAperta() async {
+    final prs = await _caricaPrAtleta();
+    if (prs.isEmpty || !mounted) return;
+
+    bool changed = false;
+
+    setState(() {
+      for (final es in widget.scheda.esercizi) {
+        if (es.modalitaIntensita != 'percentuale') continue;
+
+        if (es.massimaleKg == null || es.massimaleKg! <= 0) {
+          es.massimaleKg = _findPr(prs, es.nome);
+        }
+        final perc = _inferPercentuale(es);
+        if (es.percentualeMassimale == null && perc != null) {
+          es.percentualeMassimale = perc;
+          changed = true;
+        }
+
+        final rm = es.massimaleKg;
+        final percFinale = es.percentualeMassimale;
+        if (rm == null || rm <= 0 || percFinale == null || percFinale <= 0) continue;
+
+        es.caricoTargetKg = WorkloadCalculator.calculateFromMaxAndPercentage(
+          oneRepMax: rm,
+          percentage: percFinale,
+        );
+        changed = true;
+
+        for (final serie in es.serieAttive.where((s) => s.tipo != 'Avvicinamento')) {
+          final percSerie = _toDoubleOrNull(serie.percentualeTarget) ?? percFinale;
+          if (serie.percentualeTarget.trim().isEmpty) {
+            serie.percentualeTarget = percSerie.toStringAsFixed(percSerie % 1 == 0 ? 0 : 1);
+          }
+
+          if (serie.peso.trim().isEmpty) {
+            final carico = WorkloadCalculator.calculateFromMaxAndPercentage(
+              oneRepMax: rm,
+              percentage: percSerie,
+            );
+            serie.peso = carico.toStringAsFixed(1);
+          }
+        }
+      }
+    });
+
+    if (changed) {
+      _scheduleBozzaSave();
+    }
+  }
+
+  Future<void> _impostaPrPersonale(Esercizio esercizio) async {
+    final key = _big3Key(esercizio.nome);
+    if (key.isEmpty) return;
+
+    final controller = TextEditingController(
+      text: esercizio.massimaleKg != null ? esercizio.massimaleKg!.toStringAsFixed(1) : '',
+    );
+
+    final conferma = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Imposta PR per $key'),
+        content: TextField(
+          controller: controller,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(
+            labelText: 'Massimale (kg)',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annulla')),
+          ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Salva')),
+        ],
+      ),
+    );
+
+    if (conferma != true) return;
+    final value = double.tryParse(controller.text.replaceAll(',', '.').trim());
+    if (value == null || value <= 0) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString('personal_records');
+    final records = <String, dynamic>{};
+    if (raw != null) {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) {
+        records.addAll(decoded);
+      } else if (decoded is Map) {
+        records.addAll(Map<String, dynamic>.from(decoded));
+      }
+    }
+    for (final alias in _prAliasesForBig3(key)) {
+      records[alias] = value;
+    }
+    await prefs.setString('personal_records', jsonEncode(records));
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      try {
+        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+          'personal_records': records,
+          'ultimo_aggiornamento_pr': DateTime.now().toIso8601String(),
+        }, SetOptions(merge: true));
+      } catch (_) {}
+    }
+
+    final perc = esercizio.percentualeMassimale ?? _inferPercentuale(esercizio);
+    if (perc != null && perc > 0) {
+      final caricoDefault = WorkloadCalculator.calculateFromMaxAndPercentage(
+        oneRepMax: value,
+        percentage: perc,
+      );
+      setState(() {
+        esercizio.massimaleKg = value;
+        esercizio.percentualeMassimale ??= perc;
+        esercizio.caricoTargetKg = caricoDefault;
+        for (final serie in esercizio.serieAttive.where((s) => s.tipo != 'Avvicinamento')) {
+          final percSerie = double.tryParse(serie.percentualeTarget.replaceAll(',', '.'));
+          final caricoSerie = WorkloadCalculator.calculateFromMaxAndPercentage(
+            oneRepMax: value,
+            percentage: percSerie ?? perc,
+          );
+          if (serie.percentualeTarget.trim().isEmpty) {
+            serie.percentualeTarget = (percSerie ?? perc).toStringAsFixed(((percSerie ?? perc) % 1 == 0) ? 0 : 1);
+          }
+          if (serie.peso.trim().isEmpty) serie.peso = caricoSerie.toStringAsFixed(1);
+        }
+      });
+      _scheduleBozzaSave();
+    }
   }
 
   String _macroTagDaCategoria(String categoria) {
@@ -232,13 +744,21 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
               child: Text('Nessun esercizio di stretching disponibile al momento.', style: TextStyle(color: Colors.grey)),
             )
           else
-            ...stretching.map(
-              (es) => ListTile(
-                dense: true,
-                leading: const Icon(Icons.fitness_center, size: 18, color: Colors.lightBlueAccent),
-                title: Text(es['nome'] ?? 'Stretching'),
-                trailing: const Icon(Icons.info_outline, color: Colors.grey, size: 18),
-                onTap: () => _mostraDettagliEsercizio(es),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 220),
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: stretching.length,
+                itemBuilder: (context, i) {
+                  final es = stretching[i];
+                  return ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.fitness_center, size: 18, color: Colors.lightBlueAccent),
+                    title: Text(es['nome'] ?? 'Stretching'),
+                    trailing: const Icon(Icons.info_outline, color: Colors.grey, size: 18),
+                    onTap: () => _mostraDettagliEsercizio(es),
+                  );
+                },
               ),
             ),
         ],
@@ -308,6 +828,7 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
 
       if (!mounted) return;
       await _pulisciBozzaWorkout();
+      if (!mounted) return;
       Navigator.pop(context); 
       Navigator.pop(context, true); 
 
@@ -342,8 +863,10 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
 
   Map<String, String>? _getDatiPrecedenti(String nomeEs, int indiceSerie) {
     String nomeTargetIta = _traduciNome(nomeEs).toLowerCase().trim();
+    final storicoRecentePrima = List<Allenamento>.from(widget.storico)
+      ..sort((a, b) => b.data.compareTo(a.data));
 
-    for (var allenamento in widget.storico.reversed) {
+    for (var allenamento in storicoRecentePrima) {
       for (var es in allenamento.scheda.esercizi) {
         String nomeStoricoIta = _traduciNome(es.nome).toLowerCase().trim();
         if (nomeTargetIta == nomeStoricoIta && es.serieAttive.length > indiceSerie) {
@@ -379,8 +902,10 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
   void _mostraStoricoEsercizio(String nomeEs) {
     String nomeTargetIta = _traduciNome(nomeEs).toLowerCase().trim();
     List<Allenamento> storicoEs = [];
+    final storicoRecentePrima = List<Allenamento>.from(widget.storico)
+      ..sort((a, b) => b.data.compareTo(a.data));
     
-    for (var allenamento in widget.storico.reversed) {
+    for (var allenamento in storicoRecentePrima) {
       if (allenamento.scheda.esercizi.any((e) => _traduciNome(e.nome).toLowerCase().trim() == nomeTargetIta)) {
         storicoEs.add(allenamento);
         if (storicoEs.length >= 5) break; 
@@ -569,34 +1094,328 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
     );
   }
 
+  Future<void> _vaiSettimanaPrecedente() async {
+    if (widget.scheda.settimanaCorrente <= 1) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Sei gia alla settimana 1.'),
+          backgroundColor: Colors.grey,
+        ),
+      );
+      return;
+    }
+
+    _snapshotCurrentWeek();
+    final targetWeek = widget.scheda.settimanaCorrente - 1;
+    final restored = _applySnapshotForWeek(targetWeek);
+    if (!restored) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Nessun dato salvato per la settimana precedente.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    _scheduleBozzaSave();
+  }
+
+  Future<void> _sincronizzaWeekHistorySuCloud() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_weekHistoryStoreKey);
+      Map<String, dynamic> decoded = {};
+      if (raw != null && raw.trim().isNotEmpty) {
+        final json = jsonDecode(raw);
+        if (json is Map<String, dynamic>) {
+          decoded = json;
+        } else if (json is Map) {
+          decoded = Map<String, dynamic>.from(json);
+        }
+      }
+
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+        'app_state': {
+          'week_history_store': decoded,
+          'updated_at': FieldValue.serverTimestamp(),
+        },
+      }, SetOptions(merge: true));
+    } catch (e) {
+      debugPrint('Errore sync week history cloud: $e');
+    }
+  }
+
+  Future<void> _eliminaSettimana(int week) async {
+    _snapshotCurrentWeek();
+    if (!_weekSnapshots.containsKey(week)) return;
+
+    setState(() {
+      _weekSnapshots.remove(week);
+    });
+
+    if (_weekSnapshots.isEmpty) {
+      // Keep at least current live state as week 1 baseline.
+      setState(() {
+        widget.scheda.settimanaCorrente = 1;
+      });
+      _snapshotCurrentWeek();
+    } else if (widget.scheda.settimanaCorrente == week) {
+      final sorted = _weekSnapshots.keys.toList()..sort();
+      final prevCandidates = sorted.where((k) => k < week).toList();
+      final target = prevCandidates.isNotEmpty ? prevCandidates.last : sorted.first;
+      _applySnapshotForWeek(target);
+    }
+
+    await _salvaBozzaWorkout();
+    await _sincronizzaWeekHistorySuCloud();
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Settimana $week eliminata.'),
+        backgroundColor: Colors.green,
+      ),
+    );
+  }
+
+  Future<void> _apriGestioneSettimane() async {
+    _snapshotCurrentWeek();
+    final weeks = _weekSnapshots.keys.toList()..sort();
+
+    if (weeks.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nessuna settimana salvata.'), backgroundColor: Colors.grey),
+      );
+      return;
+    }
+
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E1E1E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              const ListTile(
+                title: Text('Gestione settimane', style: TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: Text('Elimina una settimana salvata'),
+              ),
+              ...weeks.map((w) {
+                final isCurrent = w == widget.scheda.settimanaCorrente;
+                return ListTile(
+                  leading: Icon(isCurrent ? Icons.play_arrow : Icons.calendar_today, color: isCurrent ? Colors.greenAccent : Colors.white70),
+                  title: Text('Settimana $w${isCurrent ? ' (corrente)' : ''}'),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.delete_forever, color: Colors.redAccent),
+                    onPressed: () async {
+                      Navigator.pop(context);
+                      final confirmed = await showDialog<bool>(
+                        context: this.context,
+                        builder: (context) => AlertDialog(
+                          title: const Text('Elimina settimana'),
+                          content: Text('Confermi eliminazione della settimana $w? L\'azione sincronizza anche il cloud.'),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annulla')),
+                            ElevatedButton(
+                              style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
+                              onPressed: () => Navigator.pop(context, true),
+                              child: const Text('Elimina'),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirmed == true) {
+                        await _eliminaSettimana(w);
+                      }
+                    },
+                  ),
+                );
+              }),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSchedaHeaderCompatto() {
+    final totalExercises = widget.scheda.esercizi.length;
+    final totalSeries = widget.scheda.esercizi.fold<int>(
+      0,
+      (total, e) => total + e.serieAttive.where((s) => s.tipo != 'Avvicinamento').length,
+    );
+    final completedSeries = widget.scheda.esercizi.fold<int>(
+      0,
+      (total, e) => total + e.serieAttive.where((s) => s.tipo != 'Avvicinamento' && s.isCompletata).length,
+    );
+    final completionRatio = totalSeries == 0 ? 0.0 : completedSeries / totalSeries;
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A1A),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white12),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                icon: const Icon(Icons.chevron_left, color: Colors.lightBlueAccent, size: 20),
+                tooltip: 'Settimana precedente',
+                onPressed: _vaiSettimanaPrecedente,
+              ),
+              Expanded(
+                child: Text(
+                  'Settimana ${widget.scheda.settimanaCorrente}',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                ),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                icon: const Icon(Icons.chevron_right, color: Colors.greenAccent, size: 20),
+                tooltip: 'Settimana successiva',
+                onPressed: _vaiSettimanaSuccessiva,
+              ),
+            ],
+          ),
+          const SizedBox(height: 2),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '$totalExercises esercizi • $completedSeries/$totalSeries serie completate',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.white70, fontSize: 11),
+                ),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                tooltip: 'Gestisci settimane',
+                onPressed: _apriGestioneSettimane,
+                icon: const Icon(Icons.delete_sweep, color: Colors.redAccent, size: 16),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                tooltip: 'Solo incompleti',
+                onPressed: () {
+                  setState(() {
+                    _showOnlyIncomplete = !_showOnlyIncomplete;
+                  });
+                },
+                icon: Icon(
+                  _showOnlyIncomplete ? Icons.filter_alt : Icons.filter_alt_outlined,
+                  color: _showOnlyIncomplete ? Colors.amber : Colors.white54,
+                  size: 16,
+                ),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                tooltip: 'Modalita compatta',
+                onPressed: () {
+                  setState(() {
+                    _compactMode = !_compactMode;
+                  });
+                },
+                icon: Icon(
+                  _compactMode ? Icons.view_agenda : Icons.view_stream,
+                  color: _compactMode ? Colors.lightBlueAccent : Colors.white54,
+                  size: 16,
+                ),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                tooltip: 'Calcola dischi',
+                onPressed: _apriCalcolatoreDischi,
+                icon: const Icon(Icons.calculate, size: 16, color: Colors.white70),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                tooltip: 'Aggiungi esercizio',
+                onPressed: () async {
+                  final nuovo = await Navigator.push(context, MaterialPageRoute(builder: (context) => const CreaEsercizioScreen()));
+                  if (nuovo != null) {
+                    setState(() {
+                      widget.scheda.esercizi.add(nuovo);
+                    });
+                    _scheduleBozzaSave();
+                  }
+                },
+                icon: const Icon(Icons.add, size: 16, color: Colors.white70),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: completionRatio,
+              minHeight: 4,
+              backgroundColor: Colors.white12,
+              valueColor: const AlwaysStoppedAnimation<Color>(Colors.greenAccent),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.scheda.nome, style: const TextStyle(fontWeight: FontWeight.bold)), 
-        actions: [
-          IconButton(icon: const Icon(Icons.calculate, color: Colors.white), tooltip: 'Calcola Dischi', onPressed: _apriCalcolatoreDischi),
-          IconButton(
-            icon: const Icon(Icons.add),
-            onPressed: () async {
-              final nuovo = await Navigator.push(context, MaterialPageRoute(builder: (context) => const CreaEsercizioScreen()));
-              if (nuovo != null) {
-                setState(() {
-                  widget.scheda.esercizi.add(nuovo);
-                });
-                _scheduleBozzaSave();
-              }
-            },
-          ),
-        ],
+        title: Text(widget.scheda.nome, style: const TextStyle(fontWeight: FontWeight.bold)),
       ),
       body: Column(
         children: [
+          _buildSchedaHeaderCompatto(),
           _buildSoloStretchingSection(),
           Expanded(
             child: ReorderableListView(
               padding: const EdgeInsets.only(bottom: 100),
               onReorder: (int oldIndex, int newIndex) {
+                if (_showOnlyIncomplete) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Disattiva il filtro "solo incompleti" per riordinare la scheda.'),
+                      backgroundColor: Colors.orange,
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
+                  return;
+                }
                 setState(() {
                   if (newIndex > oldIndex) newIndex -= 1;
                   final esercizio = widget.scheda.esercizi.removeAt(oldIndex);
@@ -606,7 +1425,9 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
               },
               children: [
                 for (int i = 0; i < widget.scheda.esercizi.length; i++)
-                  _buildEsercizioItem(widget.scheda.esercizi[i], i),
+                  if (!_showOnlyIncomplete ||
+                      widget.scheda.esercizi[i].serieAttive.any((s) => !s.isCompletata && s.tipo != 'Avvicinamento'))
+                    _buildEsercizioItem(widget.scheda.esercizi[i], i),
               ],
             ),
           ),
@@ -638,6 +1459,7 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
                     decoration: InputDecoration(
                       labelText: 'Note a fine sessione (Opzionale)',
                       hintText: 'Es: Ottime sensazioni, stanco sul finale...',
+                      hintStyle: TextStyle(color: Colors.grey.shade500),
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                       filled: true,
                       fillColor: Colors.black12,
@@ -666,6 +1488,7 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
 
   Widget _buildEsercizioItem(Esercizio esercizio, int index) {
     bool tuttoFatto = esercizio.serieAttive.isNotEmpty && esercizio.serieAttive.every((Serie s) => s.isCompletata);
+    final isCollapsed = _isExerciseCollapsed(esercizio, index);
     
     bool isSuperSet = esercizio.tecniche.any((t) => t.toLowerCase().contains('super'));
     bool prevIsSuperSet = index > 0 && widget.scheda.esercizi[index - 1].tecniche.any((t) => t.toLowerCase().contains('super'));
@@ -702,9 +1525,29 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
           key: ValueKey('dismiss_${esercizio.nome}_$index'),
           direction: DismissDirection.endToStart,
           background: Container(color: Colors.red, alignment: Alignment.centerRight, padding: const EdgeInsets.symmetric(horizontal: 20), child: const Icon(Icons.delete, color: Colors.white)),
+          confirmDismiss: (direction) async {
+            final conferma = await showDialog<bool>(
+              context: context,
+              builder: (dialogContext) => AlertDialog(
+                title: const Text('Eliminare esercizio?'),
+                content: Text('Vuoi davvero eliminare "${esercizio.nome}" dalla scheda?'),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(false),
+                    child: const Text('Annulla'),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(true),
+                    child: const Text('Elimina'),
+                  ),
+                ],
+              ),
+            );
+            return conferma ?? false;
+          },
           onDismissed: (direction) { setState(() { widget.scheda.esercizi.removeAt(index); }); },
           onUpdate: (details) {
-            if (details.reached == 1.0) {
+            if (details.reached) {
               _scheduleBozzaSave();
             }
           },
@@ -725,18 +1568,21 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
               side: BorderSide.none, 
             ),
             child: Padding(
-              padding: const EdgeInsets.all(12.0),
+              padding: EdgeInsets.all(_compactMode ? 9.0 : 12.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.drag_indicator, color: Colors.grey, size: 20),
+                      Icon(Icons.drag_indicator, color: Colors.grey, size: _compactMode ? 18 : 20),
                       const SizedBox(width: 8),
-                      Expanded(child: Text(esercizio.nome, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: tuttoFatto ? Colors.green : Colors.white))),
-                      if (matchDb != null) IconButton(icon: const Icon(Icons.swap_horiz, color: Colors.blueAccent, size: 22), onPressed: () => _mostraAlternative(esercizio.nome, matchDb['categoria'])),
-                      IconButton(icon: const Icon(Icons.history, color: Colors.amber, size: 22), onPressed: () => _mostraStoricoEsercizio(esercizio.nome)),
-                      if (matchDb != null) IconButton(icon: const Icon(Icons.play_circle_fill, color: Colors.deepOrange, size: 28), onPressed: () => _mostraDettagliEsercizio(matchDb)),
+                      Expanded(child: Text(esercizio.nome, style: TextStyle(fontWeight: FontWeight.bold, fontSize: _compactMode ? 14 : 16, color: tuttoFatto ? Colors.green : Colors.white))),
+                      if (matchDb != null)
+                        IconButton(
+                          icon: const Icon(Icons.play_circle_fill, color: Colors.deepOrange, size: 24),
+                          tooltip: 'Dettagli tecnica',
+                          onPressed: () => _mostraDettagliEsercizio(matchDb),
+                        ),
                       IconButton(icon: const Icon(Icons.edit, color: Colors.lightBlueAccent, size: 20), onPressed: () async {
                         final mod = await Navigator.push(context, MaterialPageRoute(builder: (c) => CreaEsercizioScreen(esercizioDaModificare: esercizio)));
                         if (mod != null) {
@@ -744,8 +1590,39 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
                           _scheduleBozzaSave();
                         }
                       }),
+                      if (matchDb != null)
+                        PopupMenuButton<String>(
+                          icon: const Icon(Icons.more_vert, color: Colors.white70, size: 20),
+                          onSelected: (value) {
+                            if (value == 'alt') {
+                              _mostraAlternative(esercizio.nome, matchDb['categoria']);
+                            }
+                            if (value == 'det') {
+                              _mostraDettagliEsercizio(matchDb);
+                            }
+                            if (value == 'sto') {
+                              _mostraStoricoEsercizio(esercizio.nome);
+                            }
+                          },
+                          itemBuilder: (context) => const [
+                            PopupMenuItem(value: 'alt', child: Text('Alternative')), 
+                            PopupMenuItem(value: 'det', child: Text('Dettagli tecnica')),
+                            PopupMenuItem(value: 'sto', child: Text('Cronologia esercizio')),
+                          ],
+                        ),
+                      IconButton(
+                        icon: Icon(
+                          isCollapsed ? Icons.expand_more : Icons.expand_less,
+                          color: Colors.white70,
+                          size: 20,
+                        ),
+                        tooltip: isCollapsed ? 'Espandi' : 'Comprimi',
+                        onPressed: () => _toggleExerciseCollapsed(esercizio, index),
+                      ),
                     ],
                   ),
+
+                  if (!isCollapsed) ...[
                   
                   if (esercizio.tecniche.isNotEmpty)
                     Wrap(
@@ -772,6 +1649,29 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
                       }).toList(),
                     ),
                   Text('Obiettivo: ${esercizio.ripetizioni} | Rec: ${esercizio.recupero}s', style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                  if (esercizio.modalitaIntensita == 'rir')
+                    Text(
+                      'Intensita: RIR ${esercizio.rirTarget ?? '-'}',
+                      style: const TextStyle(color: Colors.lightBlueAccent, fontSize: 12),
+                    )
+                  else
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Intensita: ${esercizio.percentualeMassimale?.toStringAsFixed(1) ?? '-'}% '
+                          'di ${esercizio.massimaleKg?.toStringAsFixed(1) ?? '-'}kg '
+                          '(target ${esercizio.caricoTargetKg?.toStringAsFixed(1) ?? '-'}kg)',
+                          style: const TextStyle(color: Colors.lightBlueAccent, fontSize: 12),
+                        ),
+                        if (esercizio.massimaleKg == null)
+                          TextButton.icon(
+                            onPressed: () => _impostaPrPersonale(esercizio),
+                            icon: const Icon(Icons.fitness_center, size: 16),
+                            label: const Text('Imposta il tuo PR per calcolare i carichi'),
+                          ),
+                      ],
+                    ),
                   
                   if (esercizio.note != null && esercizio.note!.trim().isNotEmpty)
                     Container(
@@ -786,59 +1686,144 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
                       child: Text('📝 ${esercizio.note}', style: const TextStyle(color: Colors.amberAccent, fontSize: 13, fontStyle: FontStyle.italic)),
                     ),
 
-                  const Divider(height: 20),
+                  const Divider(height: 16),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Row(
+                      children: const [
+                        SizedBox(width: 30, child: Text('#', style: TextStyle(color: Colors.white38, fontSize: 11))),
+                        Expanded(flex: 3, child: Text('Kg', style: TextStyle(color: Colors.white38, fontSize: 11))),
+                        Expanded(flex: 3, child: Text('Reps', style: TextStyle(color: Colors.white38, fontSize: 11))),
+                        Expanded(flex: 2, child: Text('RPE / %', style: TextStyle(color: Colors.white38, fontSize: 11))),
+                        SizedBox(width: 42),
+                      ],
+                    ),
+                  ),
                   ...esercizio.serieAttive.asMap().entries.map((entry) {
                     int sIdx = entry.key;
                     Serie serie = entry.value;
                     final prev = _getDatiPrecedenti(esercizio.nome, sIdx);
+                    final expectedKg = _expectedKgForSerie(esercizio, serie);
+                    final expectedPerc = _parsePercentInput(serie.percentualeTarget) ?? esercizio.percentualeMassimale;
                     return Container(
                       margin: const EdgeInsets.only(bottom: 6),
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                       decoration: BoxDecoration(color: serie.isCompletata ? Colors.green.withValues(alpha: 0.1) : Colors.black12, borderRadius: BorderRadius.circular(6)),
-                      child: Row(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          SizedBox(width: 30, child: Text('${sIdx + 1}º', style: const TextStyle(color: Colors.grey, fontSize: 12))),
-                          Expanded(flex: 3, child: TextField(
-                            keyboardType: TextInputType.number,
-                            decoration: InputDecoration(hintText: prev != null ? '${prev['peso']}kg' : 'Kg', border: InputBorder.none, isDense: true, hintStyle: const TextStyle(color: Colors.white24)),
-                            controller: TextEditingController(text: serie.peso)..selection = TextSelection.collapsed(offset: serie.peso.length),
-                            onChanged: (v) {
-                              serie.peso = v;
-                              _scheduleBozzaSave();
-                            },
-                          )),
-                          Expanded(flex: 3, child: TextField(
-                            keyboardType: TextInputType.number,
-                            decoration: InputDecoration(hintText: prev != null ? '${prev['reps']}r' : 'Reps', border: InputBorder.none, isDense: true, hintStyle: const TextStyle(color: Colors.white24)),
-                            controller: TextEditingController(text: serie.ripetizioniFatte)..selection = TextSelection.collapsed(offset: serie.ripetizioniFatte.length),
-                            onChanged: (v) {
-                              serie.ripetizioniFatte = v;
-                              _scheduleBozzaSave();
-                            },
-                          )),
-                          Expanded(flex: 2, child: TextField(
-                            keyboardType: TextInputType.number,
-                            decoration: InputDecoration(hintText: prev != null && prev['rpe'] != null ? 'RPE ${prev['rpe']}' : 'RPE', border: InputBorder.none, isDense: true, hintStyle: const TextStyle(color: Colors.white12, fontSize: 11)),
-                            style: const TextStyle(color: Colors.amber, fontSize: 14),
-                            controller: TextEditingController(text: serie.rpe)..selection = TextSelection.collapsed(offset: serie.rpe.length),
-                            onChanged: (v) {
-                              serie.rpe = v;
-                              _scheduleBozzaSave();
-                            },
-                          )),
-                          IconButton(
-                            icon: Icon(serie.isCompletata ? Icons.check_box : Icons.check_box_outline_blank, color: serie.isCompletata ? Colors.green : Colors.grey, size: 22),
-                            onPressed: () async {
-                              setState(() { serie.isCompletata = !serie.isCompletata; });
-                              _scheduleBozzaSave();
-                              if (await Vibration.hasVibrator() == true) Vibration.vibrate(duration: 50, amplitude: 100);
-                              if (serie.isCompletata) _avviaTimerRecupero(_estraiSecondi(esercizio.recupero));
-                            },
-                          )
+                          Row(
+                            children: [
+                              SizedBox(width: 30, child: Text('${sIdx + 1}º', style: const TextStyle(color: Colors.grey, fontSize: 12))),
+                              Expanded(flex: 3, child: TextFormField(
+                                key: ValueKey('peso_${esercizio.nome}_$sIdx'),
+                                initialValue: serie.peso,
+                                keyboardType: TextInputType.number,
+                                decoration: InputDecoration(
+                                  hintText: expectedKg != null
+                                      ? '${expectedKg.toStringAsFixed(1)}kg'
+                                      : (prev != null ? '${prev['peso']}kg' : 'Kg'),
+                                  border: InputBorder.none,
+                                  isDense: true,
+                                  hintStyle: TextStyle(color: Colors.grey.shade500),
+                                ),
+                                onChanged: (v) {
+                                  serie.peso = v;
+                                  _scheduleBozzaSave();
+                                },
+                              )),
+                              Expanded(flex: 3, child: TextFormField(
+                                key: ValueKey('reps_${esercizio.nome}_$sIdx'),
+                                initialValue: serie.ripetizioniFatte,
+                                keyboardType: TextInputType.number,
+                                decoration: InputDecoration(
+                                  hintText: prev != null ? '${prev['reps']}r' : 'Reps',
+                                  border: InputBorder.none,
+                                  isDense: true,
+                                  hintStyle: TextStyle(color: Colors.grey.shade500),
+                                ),
+                                onChanged: (v) {
+                                  serie.ripetizioniFatte = v;
+                                  _scheduleBozzaSave();
+                                },
+                              )),
+                              Expanded(flex: 2, child: TextFormField(
+                                key: ValueKey('int_${esercizio.nome}_$sIdx'),
+                                initialValue: esercizio.modalitaIntensita == 'percentuale' ? serie.percentualeTarget : serie.rpe,
+                                keyboardType: TextInputType.number,
+                                decoration: InputDecoration(
+                                  hintText: esercizio.modalitaIntensita == 'percentuale' && serie.tipo != 'Avvicinamento'
+                                      ? '% ${serie.percentualeTarget.isNotEmpty ? serie.percentualeTarget : (esercizio.percentualeMassimale?.toStringAsFixed(1) ?? '-')}'
+                                      : (prev != null && prev['rpe'] != null ? 'RPE ${prev['rpe']}' : 'RPE'),
+                                  border: InputBorder.none,
+                                  isDense: true,
+                                  hintStyle: TextStyle(color: Colors.grey.shade500, fontSize: 11),
+                                ),
+                                style: const TextStyle(color: Colors.amber, fontSize: 14),
+                                onChanged: (v) {
+                                  if (esercizio.modalitaIntensita == 'percentuale') {
+                                    final rm = esercizio.massimaleKg;
+                                    final oldPerc = _parsePercentInput(serie.percentualeTarget) ?? esercizio.percentualeMassimale;
+                                    final oldExpected = (rm != null && rm > 0 && oldPerc != null && oldPerc > 0 && serie.tipo != 'Avvicinamento')
+                                        ? WorkloadCalculator.calculateFromMaxAndPercentage(oneRepMax: rm, percentage: oldPerc)
+                                        : null;
+
+                                    final parsed = _parsePercentInput(v);
+                                    serie.percentualeTarget = parsed != null
+                                        ? parsed.toStringAsFixed(parsed % 1 == 0 ? 0 : 1)
+                                        : v.replaceAll('%', '').trim();
+
+                                    if (rm != null && rm > 0 && parsed != null && parsed > 0 && serie.tipo != 'Avvicinamento') {
+                                      final newExpected = WorkloadCalculator.calculateFromMaxAndPercentage(
+                                        oneRepMax: rm,
+                                        percentage: parsed,
+                                      );
+                                      final currentPeso = _toDoubleOrNull(serie.peso);
+                                      final shouldAutoUpdatePeso = serie.peso.trim().isEmpty ||
+                                          (oldExpected != null && currentPeso != null && _isAlmostEqual(currentPeso, oldExpected));
+
+                                      if (shouldAutoUpdatePeso) {
+                                        serie.peso = newExpected.toStringAsFixed(1);
+                                      }
+                                    }
+                                  } else {
+                                    serie.rpe = v;
+                                  }
+                                  _scheduleBozzaSave();
+                                  setState(() {});
+                                },
+                              )),
+                              IconButton(
+                                icon: Icon(serie.isCompletata ? Icons.check_box : Icons.check_box_outline_blank, color: serie.isCompletata ? Colors.green : Colors.grey, size: 22),
+                                onPressed: () async {
+                                  setState(() { serie.isCompletata = !serie.isCompletata; });
+                                  _scheduleBozzaSave();
+                                  if (await Vibration.hasVibrator() == true) Vibration.vibrate(duration: 50, amplitude: 100);
+                                  if (serie.isCompletata) _avviaTimerRecupero(_estraiSecondi(esercizio.recupero));
+                                },
+                              )
+                            ],
+                          ),
+                          if (expectedKg != null && serie.tipo != 'Avvicinamento')
+                            Padding(
+                              padding: const EdgeInsets.only(left: 32, top: 2, bottom: 2),
+                              child: Text(
+                                'Expected: ${expectedKg.toStringAsFixed(1)} kg @ ${expectedPerc?.toStringAsFixed(expectedPerc % 1 == 0 ? 0 : 1) ?? '-'}%',
+                                style: TextStyle(color: Colors.lightBlueAccent.withValues(alpha: 0.9), fontSize: 11),
+                              ),
+                            ),
                         ],
                       ),
                     );
-                  }).toList(),
+                  }),
+                  ] else
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2, bottom: 2),
+                      child: Text(
+                        'Card compatta: tocca per espandere serie e dettagli',
+                        style: TextStyle(color: Colors.grey.shade500, fontSize: 11),
+                      ),
+                    ),
                 ],
               ),
             ),

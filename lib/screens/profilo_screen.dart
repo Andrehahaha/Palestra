@@ -193,7 +193,14 @@ class _ProfiloScreenState extends State<ProfiloScreen> with SingleTickerProvider
       final docsNuovoSchema = snapshotNuovoSchema?.docs ?? const <QueryDocumentSnapshot<Map<String, dynamic>>>[];
       if (docsNuovoSchema.isNotEmpty) {
         List<Allenamento> storicoCloud = docsNuovoSchema
-            .map((doc) => Allenamento.fromJson(doc.data()))
+            .map((doc) {
+              try {
+                return Allenamento.fromJson(doc.data());
+              } catch (_) {
+                return null;
+              }
+            })
+            .whereType<Allenamento>()
             .toList();
 
         if (storicoCloud.length > storico.length) {
@@ -217,7 +224,16 @@ class _ProfiloScreenState extends State<ProfiloScreen> with SingleTickerProvider
           .get();
 
       if (snapshot.docs.isNotEmpty) {
-        List<Allenamento> storicoCloud = snapshot.docs.map((doc) => Allenamento.fromJson(doc.data())).toList();
+        List<Allenamento> storicoCloud = snapshot.docs
+            .map((doc) {
+              try {
+                return Allenamento.fromJson(doc.data());
+              } catch (_) {
+                return null;
+              }
+            })
+            .whereType<Allenamento>()
+            .toList();
         if (storicoCloud.length > storico.length) {
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString('storico_salvato', jsonEncode(storicoCloud.map((e) => e.toJson()).toList()));
@@ -289,7 +305,7 @@ class _ProfiloScreenState extends State<ProfiloScreen> with SingleTickerProvider
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
-                value: _categoriaNuovoEsercizio, 
+                initialValue: _categoriaNuovoEsercizio, 
                 decoration: const InputDecoration(labelText: 'Gruppo Muscolare', border: OutlineInputBorder()),
                 items: ['Petto', 'Schiena', 'Gambe', 'Spalle', 'Bicipiti', 'Tricipiti', 'Addominali', 'Altro']
                     .map((cat) => DropdownMenuItem(value: cat, child: Text(cat))).toList(),
@@ -632,19 +648,19 @@ class _ProfiloScreenState extends State<ProfiloScreen> with SingleTickerProvider
                 ? const Center(child: Text('Nessun dato di peso.', style: TextStyle(color: Colors.grey)))
                 : LineChart(
                     LineChartData(
-                      gridData: FlGridData(show: true, drawVerticalLine: false, getDrawingHorizontalLine: (value) => FlLine(color: Colors.grey.withOpacity(0.2), strokeWidth: 1)), 
+                      gridData: FlGridData(show: true, drawVerticalLine: false, getDrawingHorizontalLine: (value) => FlLine(color: Colors.grey.withValues(alpha: 0.2), strokeWidth: 1)), 
                       titlesData: FlTitlesData(
                         topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)), 
                         rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                         bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 30, getTitlesWidget: (value, meta) => Padding(padding: const EdgeInsets.only(top: 8.0), child: Text('#${value.toInt() + 1}', style: const TextStyle(fontSize: 12, color: Colors.grey))))),
                         leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 45, getTitlesWidget: (value, meta) => Text('${value.toInt()}kg', style: const TextStyle(fontSize: 12, color: Colors.grey)))), 
                       ),
-                      borderData: FlBorderData(show: true, border: Border(bottom: BorderSide(color: Colors.grey.withOpacity(0.5), width: 1), left: BorderSide(color: Colors.grey.withOpacity(0.5), width: 1))),
+                      borderData: FlBorderData(show: true, border: Border(bottom: BorderSide(color: Colors.grey.withValues(alpha: 0.5), width: 1), left: BorderSide(color: Colors.grey.withValues(alpha: 0.5), width: 1))),
                       lineBarsData: [
                         LineChartBarData(
                           spots: puntiLineari, isCurved: true, color: Colors.deepOrange, barWidth: 4, 
                           dotData: const FlDotData(show: true),
-                          belowBarData: BarAreaData(show: true, color: Colors.deepOrange.withOpacity(0.15))
+                          belowBarData: BarAreaData(show: true, color: Colors.deepOrange.withValues(alpha: 0.15))
                         )
                       ],
                     ),
@@ -696,7 +712,7 @@ class _ProfiloScreenState extends State<ProfiloScreen> with SingleTickerProvider
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(25)), 
               contentPadding: const EdgeInsets.symmetric(vertical: 0), 
               filled: true, 
-              fillColor: Colors.black.withOpacity(0.1)
+              fillColor: Colors.black.withValues(alpha: 0.1)
             ),
           ),
         ),
@@ -708,7 +724,7 @@ class _ProfiloScreenState extends State<ProfiloScreen> with SingleTickerProvider
               var microMap = libreriaOrganizzata[macro]!;
               List<String> microOrdinate = microMap.keys.toList()..sort();
 
-              int totMacro = microMap.values.fold(0, (sum, list) => sum + list.length);
+              int totMacro = microMap.values.fold(0, (total, list) => total + list.length);
 
               return ExpansionTile(
                 leading: Icon(_prendiIconaMuscolo(macro), color: Colors.deepOrange, size: 28),

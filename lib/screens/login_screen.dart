@@ -113,29 +113,34 @@ class _LoginScreenState extends State<LoginScreen> {
                         if (!_isLogin) ...[
                           const Text('Scegli il tuo ruolo:', style: TextStyle(fontWeight: FontWeight.bold)),
                           const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: RadioListTile<String>(
-                                  title: const Text('Atleta 🏃‍♂️', style: TextStyle(fontSize: 14)),
-                                  value: 'atleta',
-                                  groupValue: _ruoloScelto,
-                                  activeColor: Colors.deepOrange,
-                                  contentPadding: EdgeInsets.zero,
-                                  onChanged: (val) { setState(() { _ruoloScelto = val!; }); },
+                          RadioGroup<String>(
+                            groupValue: _ruoloScelto,
+                            onChanged: (val) {
+                              if (val == null) return;
+                              setState(() {
+                                _ruoloScelto = val;
+                              });
+                            },
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: RadioListTile<String>(
+                                    title: const Text('Atleta 🏃‍♂️', style: TextStyle(fontSize: 14)),
+                                    value: 'atleta',
+                                    activeColor: Colors.deepOrange,
+                                    contentPadding: EdgeInsets.zero,
+                                  ),
                                 ),
-                              ),
-                              Expanded(
-                                child: RadioListTile<String>(
-                                  title: const Text('Coach 🏋️‍♂️', style: TextStyle(fontSize: 14)),
-                                  value: 'coach',
-                                  groupValue: _ruoloScelto,
-                                  activeColor: Colors.deepOrange,
-                                  contentPadding: EdgeInsets.zero,
-                                  onChanged: (val) { setState(() { _ruoloScelto = val!; }); },
+                                Expanded(
+                                  child: RadioListTile<String>(
+                                    title: const Text('Coach 🏋️‍♂️', style: TextStyle(fontSize: 14)),
+                                    value: 'coach',
+                                    activeColor: Colors.deepOrange,
+                                    contentPadding: EdgeInsets.zero,
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                           const Divider(color: Colors.grey),
                           const SizedBox(height: 8),

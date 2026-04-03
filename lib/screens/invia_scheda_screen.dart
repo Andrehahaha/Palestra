@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../models/scheda.dart';
 
 class InviaSchedaScreen extends StatefulWidget {
   final String atletaId;
@@ -15,7 +16,7 @@ class InviaSchedaScreen extends StatefulWidget {
 }
 
 class _InviaSchedaScreenState extends State<InviaSchedaScreen> {
-  List<dynamic> libreriaLocale = [];
+  List<Map<String, dynamic>> libreriaLocale = [];
   bool _isLoading = true;
   final User? currentUser = FirebaseAuth.instance.currentUser;
 
@@ -30,11 +31,40 @@ class _InviaSchedaScreenState extends State<InviaSchedaScreen> {
     final prefs = await SharedPreferences.getInstance();
     final String? datiSalvati = prefs.getString('schede_salvate');
 
+    List<Map<String, dynamic>> schedeCompatibili = [];
+    if (datiSalvati != null) {
+      final decoded = jsonDecode(datiSalvati);
+      if (decoded is List) {
+        schedeCompatibili = decoded
+            .whereType<Map>()
+            .map((raw) => Scheda.fromJson(Map<String, dynamic>.from(raw)).toJson())
+            .toList();
+      }
+    }
+
+    if (schedeCompatibili.isEmpty && currentUser != null) {
+      try {
+        final snapshot = await FirebaseFirestore.instance
+            .collection('libreria_coach')
+            .doc(currentUser!.uid)
+            .collection('schede')
+            .get();
+
+        schedeCompatibili = snapshot.docs
+            .map((doc) => Scheda.fromJson(doc.data()).toJson())
+            .toList();
+
+        if (schedeCompatibili.isNotEmpty) {
+          await prefs.setString('schede_salvate', jsonEncode(schedeCompatibili));
+        }
+      } catch (_) {
+        // Manteniamo fallback silenzioso per non bloccare la UI.
+      }
+    }
+
     if (mounted) {
       setState(() {
-        if (datiSalvati != null) {
-          libreriaLocale = jsonDecode(datiSalvati);
-        }
+        libreriaLocale = schedeCompatibili;
         _isLoading = false;
       });
     }
@@ -69,7 +99,8 @@ class _InviaSchedaScreenState extends State<InviaSchedaScreen> {
 
     try {
       // Prepariamo la scheda aggiungendo l'ID dell'atleta bersaglio
-      Map<String, dynamic> schedaDaInviare = Map<String, dynamic>.from(schedaMaster);
+      final compatibile = Scheda.fromJson(Map<String, dynamic>.from(schedaMaster)).toJson();
+      Map<String, dynamic> schedaDaInviare = Map<String, dynamic>.from(compatibile);
       schedaDaInviare['atletaId'] = widget.atletaId; 
       schedaDaInviare['assegnataDa'] = currentUser!.uid;
       schedaDaInviare['dataAssegnazione'] = DateTime.now().toIso8601String();

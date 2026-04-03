@@ -121,7 +121,7 @@ extension _WorkoutsScreenActions on _WorkoutsScreenState {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                value: livelloSelezionato,
+                initialValue: livelloSelezionato,
                 decoration: const InputDecoration(labelText: 'Livello', border: OutlineInputBorder()),
                 items: ['Principiante', 'Intermedio', 'Avanzato']
                     .map((livello) => DropdownMenuItem(value: livello, child: Text(livello)))
@@ -245,6 +245,7 @@ extension _WorkoutsScreenActions on _WorkoutsScreenState {
     );
 
     if (nuovoNome != null && nuovoNome.isNotEmpty && nuovoNome != scheda.nome) {
+      if (!context.mounted || !mounted) return;
       _updateState(() {
         scheda.nome = nuovoNome;
       });
@@ -403,7 +404,13 @@ extension _WorkoutsScreenActions on _WorkoutsScreenState {
       await file.writeAsBytes(await pdf.save());
       if (!mounted) return;
       Navigator.pop(context);
-      await Share.shareXFiles([XFile(file.path)], text: 'Ecco le tue schede per il blocco: $nomeCategoria 💪', subject: 'Schede Allenamento Tiger');
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(file.path)],
+          text: 'Ecco le tue schede per il blocco: $nomeCategoria 💪',
+          subject: 'Schede Allenamento Tiger',
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       Navigator.pop(context);
