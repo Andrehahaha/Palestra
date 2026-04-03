@@ -67,16 +67,17 @@ class _StoricoScreenState extends State<StoricoScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final storicoInvertito = widget.storico.reversed.toList();
+    final storicoRecentePrima = List<Allenamento>.from(widget.storico)
+      ..sort((a, b) => b.data.compareTo(a.data));
 
     return Scaffold(
       appBar: AppBar(title: const Text('Storico Allenamenti')),
-      body: storicoInvertito.isEmpty
+      body: storicoRecentePrima.isEmpty
           ? const Center(child: Text('Nessun allenamento completato. Inizia ad allenarti!'))
           : ListView.builder(
-              itemCount: storicoInvertito.length,
+              itemCount: storicoRecentePrima.length,
               itemBuilder: (context, index) {
-                final allenamento = storicoInvertito[index];
+                final allenamento = storicoRecentePrima[index];
                 final d = allenamento.data;
                 final dataFormat = '${d.day}/${d.month}/${d.year} - ${d.hour}:${d.minute.toString().padLeft(2, '0')}';
 
@@ -125,7 +126,7 @@ class _StoricoScreenState extends State<StoricoScreen> {
                   ),
                   child: Card(
                     margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    color: isTestPR ? Colors.purpleAccent.withOpacity(0.15) : const Color(0xFF1E1E1E),
+                    color: isTestPR ? Colors.purpleAccent.withValues(alpha: 0.15) : const Color(0xFF1E1E1E),
                     shape: isTestPR 
                         ? RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: const BorderSide(color: Colors.purpleAccent, width: 2)) 
                         : RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -144,7 +145,7 @@ class _StoricoScreenState extends State<StoricoScreen> {
                             padding: const EdgeInsets.all(12),
                             width: double.infinity,
                             decoration: BoxDecoration(
-                              color: isTestPR ? Colors.purpleAccent.withOpacity(0.2) : Colors.amber.withOpacity(0.08),
+                              color: isTestPR ? Colors.purpleAccent.withValues(alpha: 0.2) : Colors.amber.withValues(alpha: 0.08),
                               border: Border(left: BorderSide(color: isTestPR ? Colors.purpleAccent : Colors.amber, width: 4)),
                               borderRadius: const BorderRadius.only(topRight: Radius.circular(8), bottomRight: Radius.circular(8)),
                             ),
@@ -175,7 +176,7 @@ class _StoricoScreenState extends State<StoricoScreen> {
                               }).join('  |  '),
                             ),
                           );
-                        }).toList(),
+                        }),
                       ],
                     ),
                   ),

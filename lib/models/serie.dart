@@ -3,7 +3,8 @@ class Serie {
   String peso;
   String ripetizioniFatte;
   bool isCompletata;
-  String rpe; // IL NUOVO CAMPO RPE!
+  String rpe; // IL NUOVO CAMPO RPE
+  String percentualeTarget;
 
   Serie({
     required this.tipo,
@@ -11,6 +12,7 @@ class Serie {
     this.ripetizioniFatte = '',
     this.isCompletata = false,
     this.rpe = '',
+    this.percentualeTarget = '',
   });
 
   factory Serie.fromJson(Map<String, dynamic> json) {
@@ -20,6 +22,7 @@ class Serie {
       ripetizioniFatte: json['ripetizioniFatte'] ?? '',
       isCompletata: json['isCompletata'] ?? false,
       rpe: json['rpe'] ?? '', // Retrocompatibilità: se l'allenamento è vecchio, mette vuoto
+      percentualeTarget: json['percentualeTarget'] ?? '',
     );
   }
 
@@ -30,6 +33,7 @@ class Serie {
       'ripetizioniFatte': ripetizioniFatte,
       'isCompletata': isCompletata,
       'rpe': rpe,
+      'percentualeTarget': percentualeTarget,
     };
   }
 }

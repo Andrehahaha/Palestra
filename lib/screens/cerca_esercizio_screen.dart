@@ -103,7 +103,7 @@ class _CercaEsercizioScreenState extends State<CercaEsercizioScreen> {
                   borderSide: BorderSide.none,
                 ),
                 filled: true,
-                fillColor: Colors.grey.withOpacity(0.1), // Corretto withOpacity per compatibilità
+                fillColor: Colors.grey.withValues(alpha: 0.1), // Corretto withOpacity per compatibilità
               ),
             ),
           ),

@@ -77,7 +77,7 @@ class _CoachDashboardScreenState extends State<CoachDashboardScreen> {
             children: [
               Container(
                 padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(color: color.withOpacity(0.2), shape: BoxShape.circle),
+                decoration: BoxDecoration(color: color.withValues(alpha: 0.2), shape: BoxShape.circle),
                 child: Icon(icon, size: 40, color: color),
               ),
               const SizedBox(width: 20),
@@ -170,6 +170,7 @@ class _ListaAtletiScreenState extends State<ListaAtletiScreen> {
       }
 
       await FirebaseFirestore.instance.collection('users').doc(atletaDoc.id).update({'coachId': currentUser!.uid});
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Atleta collegato con successo! 🎉'), backgroundColor: Colors.green));
     } catch (e) {
       if (!mounted) return;
@@ -361,7 +362,7 @@ class LogAtletaSpecificoScreen extends StatelessWidget {
                       padding: const EdgeInsets.all(12),
                       width: double.infinity,
                       decoration: BoxDecoration(
-                        color: Colors.amber.withOpacity(0.08),
+                        color: Colors.amber.withValues(alpha: 0.08),
                         border: const Border(left: BorderSide(color: Colors.amber, width: 4)),
                         borderRadius: const BorderRadius.only(topRight: Radius.circular(8), bottomRight: Radius.circular(8)),
                       ),
