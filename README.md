@@ -234,14 +234,5 @@ Focus test (esempi):
 
 ---
 
-## Checklist pre‑release
-- [ ] zero segreti nel repository
-- [ ] build firmata con keystore produzione
-- [ ] regole Firestore/Storage deployate
-- [ ] smoke test su dispositivo reale
-- [ ] privacy policy aggiornata (upload immagini + analisi AI)
-
----
-
 ## Licenza
-Aggiungi una licenza in `LICENSE` (es. MIT) oppure rimuovi questa sezione.
+Questo progetto è distribuito con licenza MIT. Vedi il file `LICENSE` per i dettagli.
