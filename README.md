@@ -1,33 +1,152 @@
-# Tiger
+# Tiger 🐯
+Applicazione **Flutter** per la gestione completa dell’allenamento **atleta/coach**: programmazione, esecuzione, progressione, storico e supporto AI — con approccio **local‑first** e sincronizzazione cloud.
 
-Flutter app per gestione allenamenti.
+> ⚠️ **Project Status: Proof of Concept (PoC) / Rapid Prototyping**  
+> Questo progetto è nato come PoC per testare l'integrazione di LLM (Gemini) all'interno di un'architettura mobile Flutter, gestendo la sincronizzazione locale/cloud (Firebase) e proxy sicuri. Il codice è orientato alla prototipazione rapida per validare l'idea e le funzionalità core.
 
-## Setup Sicurezza (Store)
+## Perché Tiger
+- **Ruoli separati** atleta/coach con flussi dedicati
+- **Local‑first**: l’app resta utilizzabile offline e sincronizza quando torna la connessione
+- Programmazione avanzata: **RIR** e **% su 1RM**, tecniche speciali, progressioni
+- **PR Mode** per Big 3 (panca/squat/stacco) con warmup e tentativi
+- Modulo **dolore/recupero** con linee guida operative (informativo)
+- AI integrata in modo **sicuro**: la chiave **Gemini** non è mai nel client
 
-### 1) Chiavi runtime con dart-define
-Non usare `.env` in produzione. Passa le chiavi in build-time:
+---
 
+## Funzionalità
+
+### Atleta
+- Home con KPI, ultimo allenamento e **Personal Records**
+- Gestione schede per **cartelle/categorie** (drag & drop)
+- Esecuzione scheda con tracking serie (**kg, reps, RPE o %**)
+- **Storico allenamenti** con note e dettaglio serie
+- **Progressione settimana successiva** con ricalcolo carichi
+- **PR Mode** Big 3 con progressione warmup
+- Profilo con calendario/grafici e gestione esercizi custom
+- Backup completo **JSON** locale + import da file
+
+### Coach
+- Dashboard coach + **libreria schede master**
+- Collegamento atleti **tramite email**
+- Invio schede all’atleta via **Firestore**
+- Consultazione log atleta con dettaglio sessioni e feedback
+
+### AI (Gemini via proxy)
+- Import schede da **foto** tramite endpoint proxy
+- Review di una cartella allenamenti con **analisi testuale AI**
+- Normalizzazione nomi esercizi + fallback dizionario EN→IT
+
+### Dolore e recupero (informativo)
+- Selezione zona dolore condivisa tra schermate
+- Profili dolore + linee guida operative
+- Mini‑test euristico con confidenza
+- Persistenza **locale + cloud**
+
+---
+
+## Stack
+- Flutter 3 / Dart 3
+- Firebase Auth
+- Cloud Firestore
+- Shared Preferences (cache/stato locale)
+- HTTP client verso AI proxy
+- Share / PDF / FilePicker / ImagePicker
+
+Struttura logica:
+- `lib/screens` – UI e flussi
+- `lib/models` – dominio (Scheda, Esercizio, Serie, Allenamento)
+- `lib/services` – logiche: carichi, AI, sync progress
+
+---
+
+## Persistenza e sincronizzazione
+
+### Locale
+- `schede_salvate`
+- `storico_salvato`
+- `personal_records`
+- app state (es. zona dolore)
+
+### Cloud (Firestore)
+Esempi (in base alla configurazione del progetto):
+- `users/{uid}`
+- `schede_assegnate`
+- `coaches/{coachId}/athletes/{athleteId}/progress/{yyyyMMdd}`
+- `coaches/{coachId}/athletes/{athleteId}/stats/current`
+
+Sincronizzazioni principali:
+- pull schede assegnate dal coach → atleta
+- push storico / PR / app state → cloud
+- merge progressi atleta su schema coaches/athletes
+
+---
+
+## Diagrammi (architettura)
+
+### Coach ↔ Atleta (Auth + Firestore sync)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant A as App (Atleta)
+  participant C as App (Coach)
+  participant FA as Firebase Auth
+  participant FS as Cloud Firestore
+
+  C->>FA: Login (Coach)
+  A->>FA: Login (Atleta)
+
+  C->>FS: Crea invito/collegamento (email atleta)
+  FS-->>A: Notifica/pull collegamento (query su inviti/associazioni)
+
+  C->>FS: Pubblica scheda assegnata (schede_assegnate)
+  A->>FS: Pull schede assegnate
+  A->>A: Esegue allenamento (offline OK)
+
+  A->>FS: Push storico/PR/app-state (quando online)
+  C->>FS: Legge log/feedback atleta
+```
+
+### AI (Gemini) via Proxy sicuro (Cloudflare o Functions)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant App as Flutter App
+  participant Auth as Firebase Auth
+  participant Proxy as AI Proxy (CF Worker / Firebase Functions)
+  participant Gemini as Gemini API
+
+  App->>Auth: Ottiene Firebase ID Token
+  App->>Proxy: POST /reviewWorkoutFolder (Authorization: Bearer <ID token>)
+  Proxy->>Proxy: Verifica token + rate limit + CORS
+  Proxy->>Gemini: Chiamata a Gemini (usa GEMINI_API_KEY server-side)
+  Gemini-->>Proxy: Risposta AI
+  Proxy-->>App: JSON con output AI (nessuna key esposta)
+```
+
+---
+
+## Sicurezza & segreti (importante)
+**Regola principale: nessuna API key sensibile nel client.**
+
+- `GEMINI_API_KEY`:
+  - **solo lato server/proxy**
+  - **mai hardcodata** nell’app Flutter
+- L’app chiama `AI_PROXY_BASE_URL` (proxy), che a sua volta chiama Gemini.
+
+Configurazione runtime via `--dart-define`:
+- `AI_PROXY_BASE_URL`
 - `FIREBASE_KEY_ANDROID`
 - `FIREBASE_KEY_IOS`
 - `FIREBASE_KEY_WEB`
-- `AI_PROXY_BASE_URL`
 
-`GEMINI_API_KEY` non deve stare nel client: va impostata solo su Firebase Functions come secret.
+---
 
-Esempio Android release:
+## AI Proxy: opzioni supportate
 
-```bash
-flutter build appbundle \
-	--dart-define=AI_PROXY_BASE_URL=https://europe-west1-<project-id>.cloudfunctions.net \
-	--dart-define=FIREBASE_KEY_ANDROID=... \
-	--dart-define=FIREBASE_KEY_IOS=... \
-	--dart-define=FIREBASE_KEY_WEB=...
-```
-
-### 1.1) Deploy Proxy AI su Firebase Functions
-
-> Nota: questo percorso richiede piano Blaze.
-
+### Opzione A — Firebase Functions (richiede Blaze)
 ```bash
 cd functions
 npm install
@@ -36,15 +155,11 @@ firebase functions:secrets:set GEMINI_API_KEY
 firebase deploy --only functions
 ```
 
-Endpoint usati dall'app:
-
+Endpoint (esempi):
 - `POST {AI_PROXY_BASE_URL}/analyzeWorkoutPhoto`
 - `POST {AI_PROXY_BASE_URL}/reviewWorkoutFolder`
 
-### 1.2) Alternativa Gratis: Cloudflare Workers
-
-Se non vuoi usare Blaze, puoi usare il proxy gratis su Cloudflare.
-
+### Opzione B — Cloudflare Worker (alternativa)
 ```bash
 cd ai-proxy-worker
 npm install
@@ -53,91 +168,80 @@ npx wrangler secret put GEMINI_API_KEY
 npx wrangler deploy
 ```
 
-Dopo il deploy ottieni un URL tipo:
+> Consigliato aggiungere validazione richieste (token Firebase), rate limiting e CORS sul proxy.
 
-`https://tiger-ai-proxy.<account>.workers.dev`
+---
 
-Passalo all'app in build:
+## Setup sviluppo
 
+Prerequisiti:
+- Flutter SDK
+- Progetto Firebase configurato
+- Android Studio e/o Xcode
+
+Installazione:
 ```bash
-flutter build apk \
-	--dart-define=AI_PROXY_BASE_URL=https://tiger-ai-proxy.<account>.workers.dev \
-	--dart-define=FIREBASE_KEY_ANDROID=... \
-	--dart-define=FIREBASE_KEY_IOS=... \
-	--dart-define=FIREBASE_KEY_WEB=...
+flutter pub get
+flutter run
 ```
 
-### 2) Firma release Android
+Esempio build release (Android):
+```bash
+flutter build appbundle \
+  --dart-define=AI_PROXY_BASE_URL=https://<your-proxy-base-url> \
+  --dart-define=FIREBASE_KEY_ANDROID=<key> \
+  --dart-define=FIREBASE_KEY_IOS=<key> \
+  --dart-define=FIREBASE_KEY_WEB=<key>
+```
 
-1. Crea il keystore di release.
-2. Copia `android/key.properties.example` in `android/key.properties`.
-3. Compila i campi:
-	 - `storeFile`
-	 - `storePassword`
-	 - `keyAlias`
-	 - `keyPassword`
+### Firma Android
+1. Crea un keystore release
+2. Copia `android/key.properties.example` → `android/key.properties`
+3. Valorizza `storeFile`, `storePassword`, `keyAlias`, `keyPassword`
 
-Nota: se `android/key.properties` non esiste, la build usa fallback debug solo per test locale.
+---
 
-### 3) Regole Firebase
-
-Sono presenti file locali:
-
+## Regole Firebase
+File:
 - `firestore.rules`
 - `storage.rules`
 
-Deploy regole:
-
+Deploy:
 ```bash
 firebase deploy --only firestore:rules,storage
 ```
 
-## Checklist Pre-Pubblicazione
+---
 
-- Nessun segreto in assets o repository.
-- Build release firmata con keystore di produzione.
-- Privacy policy aggiornata (uso AI / upload immagini).
-- Test release Android/iOS su device reale.
-
-## Sync Progressi Atleti (Gratis su Spark)
-
-Per evitare Blaze puoi sincronizzare i progressi senza Storage e senza Functions,
-usando solo Firestore + Auth.
-
-Schema consigliato:
-
-- `coaches/{coachId}/athletes/{athleteId}`
-- `coaches/{coachId}/athletes/{athleteId}/progress/{yyyyMMdd}`
-- `coaches/{coachId}/athletes/{athleteId}/stats/current`
-
-Nel progetto trovi il servizio pronto:
-
-- `lib/services/athlete_progress_service.dart`
-
-Uso rapido (Dart):
-
-```dart
-final service = AthleteProgressService();
-
-await service.saveProgressEntry(
-	coachId: coachId,
-	athleteId: athleteId,
-	payload: {
-		'pesoKg': 78.4,
-		'note': 'Sessione completata',
-		'workoutDone': true,
-	},
-);
-
-final page1 = await service.getRecentProgress(
-	coachId: coachId,
-	athleteId: athleteId,
-	limit: 30,
-);
-```
-
-Deploy regole Firestore:
-
+## Test
+Esecuzione:
 ```bash
-firebase deploy --only firestore:rules --project palestrai-5856f
+flutter test
 ```
+
+Focus test (esempi):
+- import AI Big 3
+- progressione settimana successiva
+- compatibilità legacy
+- ordinamento storico
+
+---
+
+## Limiti noti / note
+- La qualità dell’import da foto dipende dalla leggibilità dell’input.
+- Il modulo dolore è **informativo** e non sostituisce una valutazione medica.
+- Le chiavi AI devono restare esclusivamente lato server.
+
+---
+
+## Checklist pre‑release
+- [ ] zero segreti nel repository
+- [ ] build firmata con keystore produzione
+- [ ] regole Firestore/Storage deployate
+- [ ] smoke test su dispositivo reale
+- [ ] privacy policy aggiornata (upload immagini + analisi AI)
+
+---
+
+## Licenza
+Aggiungi una licenza in `LICENSE` (es. MIT) oppure rimuovi questa sezione.
