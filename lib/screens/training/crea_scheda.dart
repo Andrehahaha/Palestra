@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import '../models/scheda.dart';
-import '../models/esercizio.dart';
+import '../../models/scheda.dart';
+import '../../models/esercizio.dart';
 import 'crea_esercizio.dart'; 
-import '../services/dizionario_esercizi.dart'; // <--- 1. AGGIUNTO IL DIZIONARIO MAGICO
+import '../../services/dizionario_esercizi.dart'; // <--- 1. AGGIUNTO IL DIZIONARIO MAGICO
 
 class CreaSchedaScreen extends StatefulWidget {
   final Scheda? schedaDaModificare;
@@ -77,7 +77,7 @@ class _CreaSchedaScreenState extends State<CreaSchedaScreen> {
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
-                  value: _livelloSelezionato, 
+                  initialValue: _livelloSelezionato, 
                   decoration: const InputDecoration(labelText: 'Livello', border: OutlineInputBorder()),
                   items: ['Principiante', 'Intermedio', 'Avanzato'].map((l) => DropdownMenuItem(value: l, child: Text(l))).toList(),
                   onChanged: (val) => setState(() => _livelloSelezionato = val!),

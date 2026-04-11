@@ -6,7 +6,7 @@ void main() async {
   final String apiKey = const String.fromEnvironment('GEMINI_API_KEY', defaultValue: '');
 
   if (apiKey.isEmpty) {
-    print('⚠️ Errore: passa GEMINI_API_KEY via --dart-define.');
+    stdout.writeln('⚠️ Errore: passa GEMINI_API_KEY via --dart-define.');
     return;
   }
 
@@ -33,26 +33,26 @@ void main() async {
       final savedData = await fileFinale.readAsString();
       databaseTradotto = jsonDecode(savedData);
       startIndex = databaseTradotto.length;
-      print('🔄 Trovato salvataggio! Riprendo da $startIndex...');
+      stdout.writeln('🔄 Trovato salvataggio! Riprendo da $startIndex...');
     } catch (e) {
-      print('⚠️ Errore lettura file. Riparto da 0.');
+      stdout.writeln('⚠️ Errore lettura file. Riparto da 0.');
     }
   }
 
   int chunkSize = 5; 
   
   if (startIndex >= datiGrezzi.length) {
-    print('✅ Completato!');
+    stdout.writeln('✅ Completato!');
     return;
   }
 
-  print('🚀 Inizio traduzione da $startIndex a ${datiGrezzi.length}...');
+  stdout.writeln('🚀 Inizio traduzione da $startIndex a ${datiGrezzi.length}...');
 
   for (int i = startIndex; i < datiGrezzi.length; i += chunkSize) {
     int fine = (i + chunkSize < datiGrezzi.length) ? i + chunkSize : datiGrezzi.length;
     List<dynamic> chunk = datiGrezzi.sublist(i, fine);
 
-    print('🔄 Traduzione blocco $i - $fine...');
+    stdout.writeln('🔄 Traduzione blocco $i - $fine...');
 
     // PRE-FILTRAGGIO: Mandiamo all'AI SOLO quello che deve tradurre (risparmio token!)
     List<Map<String, String>> payloadDaTradurre = chunk.map((es) {
@@ -106,26 +106,26 @@ ${jsonEncode(payloadDaTradurre)}
         databaseTradotto.addAll(chunkTradotto);
         await fileFinale.writeAsString(jsonEncode(databaseTradotto));
 
-        print('✅ Blocco completato e SALVATO! (Totale: ${databaseTradotto.length})');
+        stdout.writeln('✅ Blocco completato e SALVATO! (Totale: ${databaseTradotto.length})');
         successo = true;
 
         await Future.delayed(const Duration(seconds: 25));
 
       } catch (e) {
         tentativi++;
-        print('⚠️ Errore tentativo $tentativi: $e');
+        stdout.writeln('⚠️ Errore tentativo $tentativi: $e');
         
         if (tentativi < 5) {
           int attesa = 30 * tentativi; 
-          print('🛑 Limite raggiunto. Pausa di $attesa secondi...');
+          stdout.writeln('🛑 Limite raggiunto. Pausa di $attesa secondi...');
           await Future.delayed(Duration(seconds: attesa));
         } else {
-          print('❌ Blocco fallito. Riprova più tardi.');
+          stdout.writeln('❌ Blocco fallito. Riprova più tardi.');
           return; 
         }
       }
     }
   }
 
-  print('\n🎯 MISSIONE COMPIUTA!');
+  stdout.writeln('\n🎯 MISSIONE COMPIUTA!');
 }

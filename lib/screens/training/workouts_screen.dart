@@ -10,13 +10,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
-import '../models/scheda.dart';
-import '../models/allenamento.dart';
-import '../models/esercizio.dart';
-import '../services/ai_service.dart';
-import '../services/dizionario_esercizi.dart';
-import '../services/dolore_data.dart';
-import '../services/workload_calculator.dart';
+import '../../models/scheda.dart';
+import '../../models/allenamento.dart';
+import '../../models/esercizio.dart';
+import '../../services/ai_service.dart';
+import '../../services/dizionario_esercizi.dart';
+import '../../services/dolore_data.dart';
+import '../../services/workload_calculator.dart';
 import 'dettaglio_scheda_screen.dart';
 import 'storico_screen.dart';
 import 'crea_scheda.dart';
@@ -25,8 +25,11 @@ import 'pr_mode_screen.dart';
 import 'settimana_successiva_screen.dart';
 
 part 'workouts_screen_actions.dart';
-part 'workouts_screen_view.dart';
-part 'workouts_screen_sections.dart';
+part 'workouts_screen_ui_shell.dart';
+part 'workouts_screen_ui_top.dart';
+part 'workouts_screen_ui_categories.dart';
+
+enum _WorkoutsSezione { home, schede }
 
 class WorkoutsScreen extends StatefulWidget {
   const WorkoutsScreen({super.key});
@@ -43,6 +46,7 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
   List<Allenamento> storico = []; 
   List<String> cartelleVuote = [];
   bool _isLoading = true;
+  _WorkoutsSezione _sezioneCorrente = _WorkoutsSezione.home;
 
   String _zonaStretchingSelezionata = 'Lombare';
 
@@ -379,6 +383,109 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
     }
   }
 
+  String _fingerprintAllenamento(Allenamento allenamento) {
+    final nomeScheda = allenamento.scheda.nome.toLowerCase().trim();
+    return '${allenamento.data.toIso8601String()}|$nomeScheda';
+  }
+
+  void _accodaStoricoDaDocumenti(
+    Iterable<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+    List<Allenamento> target,
+    Set<String> seen,
+  ) {
+    for (final doc in docs) {
+      try {
+        final allenamento = Allenamento.fromJson(Map<String, dynamic>.from(doc.data()));
+        final key = _fingerprintAllenamento(allenamento);
+        if (seen.add(key)) {
+          target.add(allenamento);
+        }
+      } catch (e) {
+        debugPrint('Documento storico non compatibile saltato: ${doc.id} -> $e');
+      }
+    }
+  }
+
+  List<Allenamento> _mergeStorico(
+    Iterable<Allenamento> primary,
+    Iterable<Allenamento> secondary,
+  ) {
+    final merged = <Allenamento>[];
+    final seen = <String>{};
+
+    void accoda(Iterable<Allenamento> items) {
+      for (final allenamento in items) {
+        final key = _fingerprintAllenamento(allenamento);
+        if (seen.add(key)) {
+          merged.add(allenamento);
+        }
+      }
+    }
+
+    accoda(primary);
+    accoda(secondary);
+    merged.sort((a, b) => a.data.compareTo(b.data));
+    return merged;
+  }
+
+  Future<String?> _caricaCoachIdAtleta(String atletaId) async {
+    try {
+      final doc = await FirebaseFirestore.instance.collection('users').doc(atletaId).get();
+      if (!doc.exists) return null;
+      final coachId = doc.data()?['coachId']?.toString().trim() ?? '';
+      return coachId.isEmpty ? null : coachId;
+    } catch (e) {
+      debugPrint('Errore lettura coachId atleta: $e');
+      return null;
+    }
+  }
+
+  Future<List<Allenamento>> _caricaStoricoDaCloudCollection(String atletaId) async {
+    final storicoCloud = <Allenamento>[];
+    final seen = <String>{};
+
+    try {
+      final snapshotLegacy = await FirebaseFirestore.instance
+          .collection('storico_atleti')
+          .where('atletaId', isEqualTo: atletaId)
+          .get();
+      _accodaStoricoDaDocumenti(snapshotLegacy.docs, storicoCloud, seen);
+    } catch (e) {
+      debugPrint('Errore lettura storico_atleti legacy: $e');
+    }
+
+    try {
+      final snapshotModern = await FirebaseFirestore.instance
+          .collection('storico_atleti')
+          .where('athleteId', isEqualTo: atletaId)
+          .get();
+      _accodaStoricoDaDocumenti(snapshotModern.docs, storicoCloud, seen);
+    } catch (e) {
+      debugPrint('Errore lettura storico_atleti modern: $e');
+    }
+
+    try {
+      final coachId = await _caricaCoachIdAtleta(atletaId);
+      if (coachId != null && coachId.isNotEmpty) {
+        final progressSnapshot = await FirebaseFirestore.instance
+            .collection('coaches')
+            .doc(coachId)
+            .collection('athletes')
+            .doc(atletaId)
+            .collection('progress')
+            .orderBy('sessionAt', descending: true)
+            .limit(500)
+            .get();
+        _accodaStoricoDaDocumenti(progressSnapshot.docs, storicoCloud, seen);
+      }
+    } catch (e) {
+      debugPrint('Errore lettura storico coach/progress: $e');
+    }
+
+    storicoCloud.sort((a, b) => a.data.compareTo(b.data));
+    return storicoCloud;
+  }
+
   Future<void> _caricaDati() async {
     final prefs = await SharedPreferences.getInstance();
     final String? datiSalvati = prefs.getString('schede_salvate');
@@ -420,16 +527,17 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
             cloudUpdatedAt = DateTime.tryParse(rawUpdated.toString());
           }
 
+          final cloudSchede = appState['schede_salvate'];
+          final cloudStorico = appState['storico_salvato'];
+          final cloudCartelle = appState['cartelle_vuote'];
+          final cloudZona = appState['zona_stretching'];
+          final cloudWeekHistory = appState['week_history_store'];
+
           final shouldUseCloud = !hasLocalState ||
               (cloudUpdatedAt != null &&
-                  (localUpdatedAt == null || cloudUpdatedAt.isAfter(localUpdatedAt)));
+                  localUpdatedAt != null &&
+                  cloudUpdatedAt.isAfter(localUpdatedAt));
           if (shouldUseCloud) {
-            final cloudSchede = appState['schede_salvate'];
-            final cloudStorico = appState['storico_salvato'];
-            final cloudCartelle = appState['cartelle_vuote'];
-            final cloudZona = appState['zona_stretching'];
-            final cloudWeekHistory = appState['week_history_store'];
-
             if (cloudSchede is List) {
               schedeCaricate = cloudSchede
                   .map((e) => Scheda.fromJson(Map<String, dynamic>.from(e as Map)))
@@ -455,10 +563,49 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
             }
 
             chosenUpdatedAt = cloudUpdatedAt ?? localUpdatedAt;
+          } else {
+            // Merge minimale anti-perdita: riempi solo i blocchi locali vuoti.
+            if (schedeCaricate.isEmpty && cloudSchede is List) {
+              schedeCaricate = cloudSchede
+                  .map((e) => Scheda.fromJson(Map<String, dynamic>.from(e as Map)))
+                  .toList();
+            }
+            if (storicoCaricato.isEmpty && cloudStorico is List) {
+              storicoCaricato = cloudStorico
+                  .map((e) => Allenamento.fromJson(Map<String, dynamic>.from(e as Map)))
+                  .toList();
+            }
+            if (cartelleCaricate.isEmpty && cloudCartelle is List) {
+              cartelleCaricate = cloudCartelle.map((e) => e.toString()).toList();
+            }
+            if (!zoneDolore.contains(zonaCaricata) && cloudZona is String && zoneDolore.contains(cloudZona)) {
+              zonaCaricata = cloudZona;
+            }
+            if ((chosenWeekHistoryRaw == null || chosenWeekHistoryRaw.trim().isEmpty) && cloudWeekHistory is Map) {
+              chosenWeekHistoryRaw = jsonEncode(Map<String, dynamic>.from(cloudWeekHistory));
+              await prefs.setString(
+                _weekHistoryStoreKey,
+                chosenWeekHistoryRaw,
+              );
+            }
+
+            if (cloudUpdatedAt != null && (chosenUpdatedAt == null || cloudUpdatedAt.isAfter(chosenUpdatedAt))) {
+              chosenUpdatedAt = cloudUpdatedAt;
+            }
           }
         }
       } catch (e) {
         debugPrint('Errore caricamento stato cloud: $e');
+      }
+
+      // Merge anti-perdita: unisce sempre locale/app_state con tutte le fonti cloud.
+      final fallbackStorico = await _caricaStoricoDaCloudCollection(user.uid);
+      if (fallbackStorico.isNotEmpty) {
+        final mergedStorico = _mergeStorico(storicoCaricato, fallbackStorico);
+        if (mergedStorico.length != storicoCaricato.length) {
+          storicoCaricato = mergedStorico;
+          chosenUpdatedAt ??= DateTime.now();
+        }
       }
     }
 

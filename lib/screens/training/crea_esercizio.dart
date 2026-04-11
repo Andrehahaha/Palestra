@@ -1,12 +1,12 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../models/esercizio.dart';
-import '../models/serie.dart';
-import '../models/catalogo_esercizi.dart';
-import '../services/api_esercizi.dart';
-import '../services/dizionario_esercizi.dart'; 
-import '../services/workload_calculator.dart';
+import '../../models/esercizio.dart';
+import '../../models/serie.dart';
+import '../../models/catalogo_esercizi.dart';
+import '../../services/api_esercizi.dart';
+import '../../services/dizionario_esercizi.dart'; 
+import '../../services/workload_calculator.dart';
 
 class CreaEsercizioScreen extends StatefulWidget {
   final Esercizio? esercizioDaModificare;
@@ -252,7 +252,7 @@ class _CreaEsercizioScreenState extends State<CreaEsercizioScreen> {
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(20),
                     side: BorderSide(
-                      color: isSelected ? Colors.transparent : Colors.deepOrange.withOpacity(0.3),
+                      color: isSelected ? Colors.transparent : Colors.deepOrange.withValues(alpha: 0.3),
                     )
                   ),
                   onSelected: (bool selected) {
@@ -295,7 +295,7 @@ class _CreaEsercizioScreenState extends State<CreaEsercizioScreen> {
             ),
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
-              value: _modalitaIntensita,
+              initialValue: _modalitaIntensita,
               decoration: const InputDecoration(
                 labelText: 'Modalita intensita',
                 border: OutlineInputBorder(),
@@ -460,7 +460,7 @@ class _CreaEsercizioScreenState extends State<CreaEsercizioScreen> {
                     serieAttive: nuoveSerie,
                   );
                   
-                  if (!mounted) return;
+                  if (!context.mounted || !mounted) return;
                   Navigator.pop(context, esercizioAggiornato);
                 }
               },

@@ -3,7 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../services/dolore_data.dart';
+import '../../services/dolore_data.dart';
 
 class DoloreScreen extends StatefulWidget {
   const DoloreScreen({super.key});
@@ -365,9 +365,9 @@ class _DoloreScreenState extends State<DoloreScreen> {
             Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: Colors.amber.withOpacity(0.15),
+                color: Colors.amber.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.amber.withOpacity(0.45)),
+                border: Border.all(color: Colors.amber.withValues(alpha: 0.45)),
               ),
               child: const Text(
                 'Suggerimenti generali: se il dolore è forte, dura a lungo o peggiora, sospendi i carichi e senti un professionista sanitario.',
@@ -513,9 +513,9 @@ class _DoloreScreenState extends State<DoloreScreen> {
                           width: double.infinity,
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
-                            color: Colors.deepOrange.withOpacity(0.12),
+                            color: Colors.deepOrange.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: Colors.deepOrange.withOpacity(0.4)),
+                            border: Border.all(color: Colors.deepOrange.withValues(alpha: 0.4)),
                           ),
                           child: Text(
                             'Risultato test: $_tipoSuggeritoTest • Confidenza ${_confidenzaTest!}% (${_etichettaConfidenza(_confidenzaTest!)})',
@@ -531,7 +531,7 @@ class _DoloreScreenState extends State<DoloreScreen> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.04),
+                color: Colors.white.withValues(alpha: 0.04),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: Colors.white24),
               ),

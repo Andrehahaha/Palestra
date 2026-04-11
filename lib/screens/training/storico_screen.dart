@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../models/allenamento.dart';
-import '../services/dizionario_esercizi.dart'; 
-import '../services/athlete_progress_service.dart';
+import '../../models/allenamento.dart';
+import '../../services/dizionario_esercizi.dart'; 
+import '../../services/athlete_progress_service.dart';
 
 class StoricoScreen extends StatefulWidget {
   final List<Allenamento> storico;
@@ -126,7 +126,7 @@ class _StoricoScreenState extends State<StoricoScreen> {
                   ),
                   child: Card(
                     margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    color: isTestPR ? Colors.purpleAccent.withOpacity(0.15) : const Color(0xFF1E1E1E),
+                    color: isTestPR ? Colors.purpleAccent.withValues(alpha: 0.15) : const Color(0xFF1E1E1E),
                     shape: isTestPR 
                         ? RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: const BorderSide(color: Colors.purpleAccent, width: 2)) 
                         : RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -145,7 +145,7 @@ class _StoricoScreenState extends State<StoricoScreen> {
                             padding: const EdgeInsets.all(12),
                             width: double.infinity,
                             decoration: BoxDecoration(
-                              color: isTestPR ? Colors.purpleAccent.withOpacity(0.2) : Colors.amber.withOpacity(0.08),
+                              color: isTestPR ? Colors.purpleAccent.withValues(alpha: 0.2) : Colors.amber.withValues(alpha: 0.08),
                               border: Border(left: BorderSide(color: isTestPR ? Colors.purpleAccent : Colors.amber, width: 4)),
                               borderRadius: const BorderRadius.only(topRight: Radius.circular(8), bottomRight: Radius.circular(8)),
                             ),
@@ -176,7 +176,7 @@ class _StoricoScreenState extends State<StoricoScreen> {
                               }).join('  |  '),
                             ),
                           );
-                        }).toList(),
+                        }),
                       ],
                     ),
                   ),

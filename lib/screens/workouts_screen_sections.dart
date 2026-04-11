@@ -1,3 +1,8 @@
+/*
+Legacy placeholder.
+The active implementation lives in:
+lib/screens/training/workouts_screen_sections.dart
+
 part of 'workouts_screen.dart';
 
 extension _WorkoutsScreenSections on _WorkoutsScreenState {
@@ -38,7 +43,8 @@ extension _WorkoutsScreenSections on _WorkoutsScreenState {
         onPressed: () async {
           showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator(color: Colors.greenAccent)));
           await _sincronizzaColCoach(silenzioso: false);
-          if (mounted) Navigator.pop(context);
+          if (!context.mounted) return;
+          Navigator.pop(context);
         },
       ),
       IconButton(
@@ -46,6 +52,7 @@ extension _WorkoutsScreenSections on _WorkoutsScreenState {
         onPressed: () async {
           final picker = ImagePicker();
           final XFile? foto = await picker.pickImage(source: ImageSource.gallery);
+          if (!context.mounted) return;
           if (foto != null) {
             if (!mounted) return;
             showDialog(
@@ -54,7 +61,7 @@ extension _WorkoutsScreenSections on _WorkoutsScreenState {
               builder: (context) => const Center(child: CircularProgressIndicator(color: Colors.deepOrange)),
             );
             List<Scheda>? schedeImportate = await AiService.analizzaFotoScheda(foto);
-            if (!mounted) return;
+            if (!context.mounted || !mounted) return;
             Navigator.pop(context);
             if (schedeImportate != null && schedeImportate.isNotEmpty) {
               _updateState(() {
@@ -98,7 +105,7 @@ extension _WorkoutsScreenSections on _WorkoutsScreenState {
               decoration: BoxDecoration(
                 gradient: const LinearGradient(colors: [Colors.deepOrange, Colors.redAccent], begin: Alignment.topLeft, end: Alignment.bottomRight),
                 borderRadius: BorderRadius.circular(16),
-                boxShadow: [BoxShadow(color: Colors.deepOrange.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 4))],
+                boxShadow: [BoxShadow(color: Colors.deepOrange.withValues(alpha: 0.3), blurRadius: 10, offset: const Offset(0, 4))],
               ),
               child: const Row(
                 children: [
@@ -152,7 +159,7 @@ extension _WorkoutsScreenSections on _WorkoutsScreenState {
             return Container(
               margin: const EdgeInsets.symmetric(vertical: 2, horizontal: 8),
               decoration: BoxDecoration(
-                color: isHovering ? Colors.deepOrange.withOpacity(0.1) : Colors.transparent,
+                color: isHovering ? Colors.deepOrange.withValues(alpha: 0.1) : Colors.transparent,
                 border: isHovering ? Border.all(color: Colors.deepOrange, width: 2) : null,
                 borderRadius: BorderRadius.circular(12),
               ),
@@ -349,3 +356,4 @@ extension _WorkoutsScreenSections on _WorkoutsScreenState {
     );
   }
 }
+*/

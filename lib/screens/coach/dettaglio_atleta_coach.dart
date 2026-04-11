@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
-import '../models/scheda.dart';
-import '../services/ai_service.dart';
-import 'crea_scheda.dart';
+import '../../models/scheda.dart';
+import '../../services/ai_service.dart';
+import '../training/crea_scheda.dart';
 import 'seleziona_scheda_libreria.dart'; // <-- NUOVO IMPORT
 
 class DettaglioAtletaCoachScreen extends StatelessWidget {

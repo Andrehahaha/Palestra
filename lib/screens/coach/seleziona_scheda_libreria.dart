@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
-import '../models/scheda.dart';
+import '../../models/scheda.dart';
 
 class SelezionaSchedaLibreria extends StatefulWidget {
   const SelezionaSchedaLibreria({super.key});

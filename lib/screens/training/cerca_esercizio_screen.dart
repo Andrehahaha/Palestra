@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../services/api_esercizi.dart'; 
-import '../services/dizionario_esercizi.dart'; // <--- AGGIUNTO L'IMPORT MAGICO
+import '../../services/api_esercizi.dart'; 
+import '../../services/dizionario_esercizi.dart'; // <--- AGGIUNTO L'IMPORT MAGICO
 
 class CercaEsercizioScreen extends StatefulWidget {
   const CercaEsercizioScreen({super.key});
@@ -103,7 +103,7 @@ class _CercaEsercizioScreenState extends State<CercaEsercizioScreen> {
                   borderSide: BorderSide.none,
                 ),
                 filled: true,
-                fillColor: Colors.grey.withOpacity(0.1), // Corretto withOpacity per compatibilità
+                fillColor: Colors.grey.withValues(alpha: 0.1), // Corretto withOpacity per compatibilità
               ),
             ),
           ),
