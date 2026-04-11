@@ -1,8 +1,3 @@
-/*
-Legacy placeholder.
-The active implementation lives in:
-lib/screens/training/workouts_screen_sections.dart
-
 part of 'workouts_screen.dart';
 
 extension _WorkoutsScreenSections on _WorkoutsScreenState {
@@ -70,7 +65,8 @@ extension _WorkoutsScreenSections on _WorkoutsScreenState {
               _salvaDati();
               ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${schedeImportate.length} schede importate! 🤖💪')));
             } else {
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Errore durante la scansione. Riprova! ❌')));
+              final msg = AiService.consumeLastError() ?? 'Errore durante la scansione. Riprova! ❌';
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
             }
           }
         },
@@ -356,4 +352,3 @@ extension _WorkoutsScreenSections on _WorkoutsScreenState {
     );
   }
 }
-*/
