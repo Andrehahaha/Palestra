@@ -1,8 +1,3 @@
-/*
-Legacy placeholder.
-The active implementation lives in:
-lib/screens/training/workouts_screen_sections.dart
-
 part of 'workouts_screen.dart';
 
 extension _WorkoutsScreenSections on _WorkoutsScreenState {
@@ -356,4 +351,3 @@ extension _WorkoutsScreenSections on _WorkoutsScreenState {
     );
   }
 }
-*/

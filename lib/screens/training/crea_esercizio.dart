@@ -1,12 +1,12 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../models/esercizio.dart';
-import '../models/serie.dart';
-import '../models/catalogo_esercizi.dart';
-import '../services/api_esercizi.dart';
-import '../services/dizionario_esercizi.dart'; 
-import '../services/workload_calculator.dart';
+import '../../models/esercizio.dart';
+import '../../models/serie.dart';
+import '../../models/catalogo_esercizi.dart';
+import '../../services/api_esercizi.dart';
+import '../../services/dizionario_esercizi.dart'; 
+import '../../services/workload_calculator.dart';
 
 class CreaEsercizioScreen extends StatefulWidget {
   final Esercizio? esercizioDaModificare;

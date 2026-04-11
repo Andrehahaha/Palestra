@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../models/allenamento.dart';
-import '../services/dizionario_esercizi.dart'; 
-import '../services/athlete_progress_service.dart';
+import '../../models/allenamento.dart';
+import '../../services/dizionario_esercizi.dart'; 
+import '../../services/athlete_progress_service.dart';
 
 class StoricoScreen extends StatefulWidget {
   final List<Allenamento> storico;

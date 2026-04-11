@@ -2,9 +2,9 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 
-import '../models/esercizio.dart';
-import '../models/scheda.dart';
-import '../services/workload_calculator.dart';
+import '../../models/esercizio.dart';
+import '../../models/scheda.dart';
+import '../../services/workload_calculator.dart';
 
 double? _parseProgressionePercent(String raw) {
   final normalized = raw.replaceAll('%', '').replaceAll(',', '.').trim();

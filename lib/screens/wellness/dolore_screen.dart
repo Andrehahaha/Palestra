@@ -3,7 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../services/dolore_data.dart';
+import '../../services/dolore_data.dart';
 
 class DoloreScreen extends StatefulWidget {
   const DoloreScreen({super.key});

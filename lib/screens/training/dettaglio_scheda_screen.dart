@@ -8,16 +8,16 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math'; 
-import '../models/scheda.dart';
-import '../models/allenamento.dart';
-import '../models/esercizio.dart';
-import '../models/serie.dart';
+import '../../models/scheda.dart';
+import '../../models/allenamento.dart';
+import '../../models/esercizio.dart';
+import '../../models/serie.dart';
 import 'crea_esercizio.dart';
 import 'settimana_successiva_screen.dart';
-import '../services/api_esercizi.dart';
-import '../services/dizionario_esercizi.dart';
-import '../services/athlete_progress_service.dart';
-import '../services/workload_calculator.dart';
+import '../../services/api_esercizi.dart';
+import '../../services/dizionario_esercizi.dart';
+import '../../services/athlete_progress_service.dart';
+import '../../services/workload_calculator.dart';
 
 // ============================================================================
 // SCHERMATA DETTAGLIO ALLENAMENTO (CORE DELL'APP)
@@ -1525,26 +1525,6 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
           key: ValueKey('dismiss_${esercizio.nome}_$index'),
           direction: DismissDirection.endToStart,
           background: Container(color: Colors.red, alignment: Alignment.centerRight, padding: const EdgeInsets.symmetric(horizontal: 20), child: const Icon(Icons.delete, color: Colors.white)),
-          confirmDismiss: (direction) async {
-            final conferma = await showDialog<bool>(
-              context: context,
-              builder: (dialogContext) => AlertDialog(
-                title: const Text('Eliminare esercizio?'),
-                content: Text('Vuoi davvero eliminare "${esercizio.nome}" dalla scheda?'),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.of(dialogContext).pop(false),
-                    child: const Text('Annulla'),
-                  ),
-                  TextButton(
-                    onPressed: () => Navigator.of(dialogContext).pop(true),
-                    child: const Text('Elimina'),
-                  ),
-                ],
-              ),
-            );
-            return conferma ?? false;
-          },
           onDismissed: (direction) { setState(() { widget.scheda.esercizi.removeAt(index); }); },
           onUpdate: (details) {
             if (details.reached) {

@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:palestra/models/esercizio.dart';
 import 'package:palestra/models/serie.dart';
-import 'package:palestra/screens/settimana_successiva_screen.dart';
+import 'package:palestra/screens/training/settimana_successiva_screen.dart';
 
 void main() {
   group('Settimana progression logic', () {

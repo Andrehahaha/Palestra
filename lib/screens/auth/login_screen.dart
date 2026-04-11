@@ -15,9 +15,6 @@ class _LoginScreenState extends State<LoginScreen> {
   String _password = '';
   bool _isLogin = true; // true = Login, false = Registrazione
   bool _isLoading = false;
-  
-  // Ruolo predefinito per i nuovi registrati
-  String _ruoloScelto = 'atleta'; 
 
   void _submit() async {
     if (!_formKey.currentState!.validate()) return;
@@ -45,10 +42,10 @@ class _LoginScreenState extends State<LoginScreen> {
         // Salviamo il ruolo e il profilo sul database Firestore
         await FirebaseFirestore.instance.collection('users').doc(userCredential.user!.uid).set({
           'email': _email.trim(),
-          'ruolo': _ruoloScelto,
+          'ruolo': 'atleta',
           'nome': 'Nuovo Utente',
           'dataCreazione': FieldValue.serverTimestamp(),
-          'coachId': _ruoloScelto == 'atleta' ? '' : null, // Se è atleta, inizialmente non ha un coach
+          'coachId': '',
         });
       }
     } on FirebaseAuthException catch (e) {
@@ -109,38 +106,11 @@ class _LoginScreenState extends State<LoginScreen> {
                     key: _formKey,
                     child: Column(
                       children: [
-                        // Se è in modalità Registrazione, mostra la scelta del ruolo
                         if (!_isLogin) ...[
-                          const Text('Scegli il tuo ruolo:', style: TextStyle(fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 8),
-                          RadioGroup<String>(
-                            groupValue: _ruoloScelto,
-                            onChanged: (val) {
-                              if (val == null) return;
-                              setState(() {
-                                _ruoloScelto = val;
-                              });
-                            },
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: RadioListTile<String>(
-                                    title: const Text('Atleta 🏃‍♂️', style: TextStyle(fontSize: 14)),
-                                    value: 'atleta',
-                                    activeColor: Colors.deepOrange,
-                                    contentPadding: EdgeInsets.zero,
-                                  ),
-                                ),
-                                Expanded(
-                                  child: RadioListTile<String>(
-                                    title: const Text('Coach 🏋️‍♂️', style: TextStyle(fontSize: 14)),
-                                    value: 'coach',
-                                    activeColor: Colors.deepOrange,
-                                    contentPadding: EdgeInsets.zero,
-                                  ),
-                                ),
-                              ],
-                            ),
+                          const Text(
+                            'La registrazione crea un account atleta.\nI coach vengono abilitati dall\'amministratore.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(fontSize: 13, color: Colors.grey),
                           ),
                           const Divider(color: Colors.grey),
                           const SizedBox(height: 8),

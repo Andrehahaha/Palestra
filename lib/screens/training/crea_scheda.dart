@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import '../models/scheda.dart';
-import '../models/esercizio.dart';
+import '../../models/scheda.dart';
+import '../../models/esercizio.dart';
 import 'crea_esercizio.dart'; 
-import '../services/dizionario_esercizi.dart'; // <--- 1. AGGIUNTO IL DIZIONARIO MAGICO
+import '../../services/dizionario_esercizi.dart'; // <--- 1. AGGIUNTO IL DIZIONARIO MAGICO
 
 class CreaSchedaScreen extends StatefulWidget {
   final Scheda? schedaDaModificare;
