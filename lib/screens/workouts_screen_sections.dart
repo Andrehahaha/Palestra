@@ -1,5 +1,7 @@
 part of 'workouts_screen.dart';
 
+enum _AiImportSource { photo, pdf }
+
 extension _WorkoutsScreenSections on _WorkoutsScreenState {
   Future<void> _apriSettimanaSuccessiva(Scheda scheda) async {
     final aggiornata = await Navigator.push(
@@ -31,6 +33,171 @@ extension _WorkoutsScreenSections on _WorkoutsScreenState {
     return schedeRaggruppate;
   }
 
+  Future<void> _mergeWeekHistoryStoreEntries(
+    Map<String, Map<String, dynamic>> entries,
+  ) async {
+    if (entries.isEmpty) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_WorkoutsScreenState._weekHistoryStoreKey);
+    final store = <String, dynamic>{};
+
+    if (raw != null && raw.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map<String, dynamic>) {
+          store.addAll(decoded);
+        } else if (decoded is Map) {
+          store.addAll(Map<String, dynamic>.from(decoded));
+        }
+      } catch (_) {
+        // If current payload is corrupted, keep only new entries.
+      }
+    }
+
+    for (final entry in entries.entries) {
+      final mergedWeeks = <String, dynamic>{};
+      final existing = store[entry.key];
+      if (existing is Map<String, dynamic>) {
+        mergedWeeks.addAll(existing);
+      } else if (existing is Map) {
+        mergedWeeks.addAll(Map<String, dynamic>.from(existing));
+      }
+
+      mergedWeeks.addAll(entry.value);
+      store[entry.key] = mergedWeeks;
+    }
+
+    await prefs.setString(
+      _WorkoutsScreenState._weekHistoryStoreKey,
+      jsonEncode(store),
+    );
+  }
+
+  Future<void> _importaConAI(BuildContext context) async {
+    final source = await showModalBottomSheet<_AiImportSource>(
+      context: context,
+      backgroundColor: const Color(0xFF1E1E1E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library, color: Colors.lightBlueAccent),
+              title: const Text('Importa da foto'),
+              subtitle: const Text('Seleziona una foto della scheda'),
+              onTap: () => Navigator.pop(ctx, _AiImportSource.photo),
+            ),
+            ListTile(
+              leading: const Icon(Icons.picture_as_pdf, color: Colors.redAccent),
+              title: const Text('Importa da PDF'),
+              subtitle: const Text('Seleziona un file PDF della programmazione'),
+              onTap: () => Navigator.pop(ctx, _AiImportSource.pdf),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (source == null || !context.mounted || !mounted) return;
+
+    List<Scheda>? schedeImportate;
+
+    if (source == _AiImportSource.photo) {
+      final picker = ImagePicker();
+      final XFile? foto = await picker.pickImage(source: ImageSource.gallery);
+      if (foto == null || !context.mounted || !mounted) return;
+
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(color: Colors.deepOrange),
+        ),
+      );
+
+      schedeImportate = await AiService.analizzaFotoScheda(foto);
+    } else {
+      final picked = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['pdf'],
+        withData: true,
+      );
+      if (picked == null || picked.files.isEmpty || !context.mounted || !mounted) return;
+
+      final selectedFile = picked.files.single;
+      var pdfBytes = selectedFile.bytes;
+      if ((pdfBytes == null || pdfBytes.isEmpty) && selectedFile.path != null) {
+        try {
+          pdfBytes = await File(selectedFile.path!).readAsBytes();
+        } catch (_) {
+          pdfBytes = null;
+        }
+      }
+
+      if (pdfBytes == null || pdfBytes.isEmpty) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Impossibile leggere il PDF selezionato.')),
+        );
+        return;
+      }
+
+      if (!context.mounted || !mounted) return;
+
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(color: Colors.deepOrange),
+        ),
+      );
+
+      schedeImportate = await AiService.analizzaPdfSchedaBytes(pdfBytes);
+    }
+
+    if (!context.mounted || !mounted) return;
+    Navigator.pop(context);
+
+    if (schedeImportate != null && schedeImportate.isNotEmpty) {
+      final resolved = AiService.collapseImportedSchedeForWeeklyProgression(
+        schedeImportate,
+      );
+
+      if (resolved.weekHistoryStoreEntries.isNotEmpty) {
+        await _mergeWeekHistoryStoreEntries(resolved.weekHistoryStoreEntries);
+      }
+
+      _updateState(() {
+        mieSchede.addAll(resolved.schedeVisibili);
+      });
+      await _salvaDati();
+      if (!context.mounted || !mounted) return;
+
+      final sourceLabel = source == _AiImportSource.photo ? 'foto' : 'PDF';
+      final progressionWeeks = resolved.weekHistoryStoreEntries.values.fold(
+        0,
+        (total, weeks) => total + weeks.length,
+      );
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            progressionWeeks > 0
+                ? '${resolved.schedeVisibili.length} schede/sedute importate da $sourceLabel. Progressione settimanale pronta ($progressionWeeks settimane successive).'
+                : '${resolved.schedeVisibili.length} schede importate da $sourceLabel! 🤖💪',
+          ),
+        ),
+      );
+    } else {
+      final msg = AiService.consumeLastError() ?? 'Errore durante l\'import. Riprova! ❌';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    }
+  }
+
   List<Widget> _buildAppBarActions(BuildContext context) {
     return [
       IconButton(
@@ -44,32 +211,7 @@ extension _WorkoutsScreenSections on _WorkoutsScreenState {
       ),
       IconButton(
         icon: const Icon(Icons.document_scanner, color: Colors.blueAccent),
-        onPressed: () async {
-          final picker = ImagePicker();
-          final XFile? foto = await picker.pickImage(source: ImageSource.gallery);
-          if (!context.mounted) return;
-          if (foto != null) {
-            if (!mounted) return;
-            showDialog(
-              context: context,
-              barrierDismissible: false,
-              builder: (context) => const Center(child: CircularProgressIndicator(color: Colors.deepOrange)),
-            );
-            List<Scheda>? schedeImportate = await AiService.analizzaFotoScheda(foto);
-            if (!context.mounted || !mounted) return;
-            Navigator.pop(context);
-            if (schedeImportate != null && schedeImportate.isNotEmpty) {
-              _updateState(() {
-                mieSchede.addAll(schedeImportate);
-              });
-              _salvaDati();
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${schedeImportate.length} schede importate! 🤖💪')));
-            } else {
-              final msg = AiService.consumeLastError() ?? 'Errore durante la scansione. Riprova! ❌';
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-            }
-          }
-        },
+        onPressed: () => _importaConAI(context),
       ),
       IconButton(
         icon: const Icon(Icons.history),

@@ -41,7 +41,7 @@ class DefaultFirebaseOptions {
   }
 
 static FirebaseOptions get web => FirebaseOptions(
-  apiKey: const String.fromEnvironment('FIREBASE_KEY_WEB', defaultValue: ''),
+  apiKey: const String.fromEnvironment('FIREBASE_KEY_WEB', defaultValue: 'AIzaSyAM_tEdZDeweZHhnz31ZYWDNBS-SA3ftAg'),
     appId: '1:969748256853:web:eaf849a2bd42b2dc115cdc',
     messagingSenderId: '969748256853',
     projectId: 'palestrai-5856f',
@@ -50,7 +50,7 @@ static FirebaseOptions get web => FirebaseOptions(
   );
 
   static FirebaseOptions get android => FirebaseOptions(
-    apiKey: const String.fromEnvironment('FIREBASE_KEY_ANDROID', defaultValue: ''),
+    apiKey: const String.fromEnvironment('FIREBASE_KEY_ANDROID', defaultValue: 'AIzaSyC9STGUH1f6Pt52ZBVHNk1a3NOPxLptX6c'),
     appId: '1:969748256853:android:a13558c200a737aa115cdc',
     messagingSenderId: '969748256853',
     projectId: 'palestrai-5856f',
@@ -58,7 +58,7 @@ static FirebaseOptions get web => FirebaseOptions(
   );
 
   static FirebaseOptions get ios => FirebaseOptions(
-    apiKey: const String.fromEnvironment('FIREBASE_KEY_IOS', defaultValue: ''),
+    apiKey: const String.fromEnvironment('FIREBASE_KEY_IOS', defaultValue: 'AIzaSyDPWfO1qoglQ4Cfg-ogCt9_9nTJYL_rSQo'),
     appId: '1:969748256853:ios:40ec81b8c2501cd5115cdc',
     messagingSenderId: '969748256853',
     projectId: 'palestrai-5856f',
@@ -67,7 +67,7 @@ static FirebaseOptions get web => FirebaseOptions(
   );
 
   static FirebaseOptions get macos => FirebaseOptions(
-    apiKey: const String.fromEnvironment('FIREBASE_KEY_IOS', defaultValue: ''),
+    apiKey: const String.fromEnvironment('FIREBASE_KEY_IOS', defaultValue: 'AIzaSyDPWfO1qoglQ4Cfg-ogCt9_9nTJYL_rSQo'),
     appId: '1:969748256853:ios:40ec81b8c2501cd5115cdc',
     messagingSenderId: '969748256853',
     projectId: 'palestrai-5856f',
@@ -76,7 +76,7 @@ static FirebaseOptions get web => FirebaseOptions(
   );
 
   static FirebaseOptions get windows => FirebaseOptions(
-    apiKey: const String.fromEnvironment('FIREBASE_KEY_WEB', defaultValue: ''),
+    apiKey: const String.fromEnvironment('FIREBASE_KEY_WEB', defaultValue: 'AIzaSyAM_tEdZDeweZHhnz31ZYWDNBS-SA3ftAg'),
     appId: '1:969748256853:web:d7c4a42d429a2aad115cdc',
     messagingSenderId: '969748256853',
     projectId: 'palestrai-5856f',

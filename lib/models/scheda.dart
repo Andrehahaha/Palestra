@@ -71,7 +71,6 @@ class Scheda {
 
   factory Scheda.fromJson(Map<String, dynamic> json) {
     final rawId = json['id']?.toString();
-    final isLegacyWithoutId = rawId == null || rawId.trim().isEmpty;
 
     return Scheda(
       id: (rawId != null && rawId.trim().isNotEmpty)
@@ -82,7 +81,7 @@ class Scheda {
       // ECCO IL SALVAVITA: se la categoria non esiste nei vecchi salvataggi, usa 'Generale'
       categoria: json['categoria'] ?? 'Generale', 
       continuativa: json['continuativa'] ?? true,
-      settimanaCorrente: isLegacyWithoutId ? 1 : (json['settimanaCorrente'] ?? 1),
+      settimanaCorrente: json['settimanaCorrente'] ?? 1,
       esercizi: (json['esercizi'] as List?)?.map((e) => Esercizio.fromJson(e)).toList() ?? [],
     );
   }

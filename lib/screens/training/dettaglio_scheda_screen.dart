@@ -42,7 +42,9 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
   bool _compactMode = false;
   bool _showOnlyIncomplete = false;
 
-  String get _bozzaKey => 'workout_bozza_${widget.scheda.nome}';
+  String get _bozzaKey => 'workout_bozza_${widget.scheda.id}';
+
+  String get _legacyBozzaKeyByName => 'workout_bozza_${widget.scheda.nome}';
 
   String get _schedaWeekHistoryKey {
     return widget.scheda.id;
@@ -220,7 +222,15 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
         }
       }
 
-      final bozzaJson = prefs.getString(_bozzaKey);
+      String? bozzaJson = prefs.getString(_bozzaKey);
+      final usingLegacyBozzaKey = bozzaJson == null;
+      bozzaJson ??= prefs.getString(_legacyBozzaKeyByName);
+
+      if (usingLegacyBozzaKey && bozzaJson != null) {
+        await prefs.setString(_bozzaKey, bozzaJson);
+        await prefs.remove(_legacyBozzaKeyByName);
+      }
+
       if (bozzaJson == null || !mounted) {
         if (kDebugMode) {
           debugPrint('[WEEK] nessuna bozza trovata per key=$_bozzaKey');
@@ -329,6 +339,78 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
     } catch (e) {
       debugPrint('Errore pulizia bozza workout: $e');
     }
+  }
+
+  List<int> _sortedWeekTimeline() {
+    final weeks = <int>{
+      widget.scheda.settimanaCorrente,
+      ..._weekSnapshots.keys,
+    }.toList()
+      ..sort();
+    return weeks;
+  }
+
+  Map<String, int> _statsFromScheda(Scheda source) {
+    final totalExercises = source.esercizi.length;
+    final totalSeries = source.esercizi.fold<int>(
+      0,
+      (total, e) => total + e.serieAttive.where((s) => s.tipo != 'Avvicinamento').length,
+    );
+    final completedSeries = source.esercizi.fold<int>(
+      0,
+      (total, e) => total + e.serieAttive.where((s) => s.tipo != 'Avvicinamento' && s.isCompletata).length,
+    );
+
+    return {
+      'exercises': totalExercises,
+      'totalSeries': totalSeries,
+      'completedSeries': completedSeries,
+    };
+  }
+
+  Map<String, int> _statsForWeek(int week) {
+    if (week == widget.scheda.settimanaCorrente) {
+      return _statsFromScheda(widget.scheda);
+    }
+
+    final raw = _weekSnapshots[week];
+    if (raw == null) {
+      return {
+        'exercises': 0,
+        'totalSeries': 0,
+        'completedSeries': 0,
+      };
+    }
+
+    try {
+      final scheda = Scheda.fromJson(Map<String, dynamic>.from(raw));
+      return _statsFromScheda(scheda);
+    } catch (_) {
+      return {
+        'exercises': 0,
+        'totalSeries': 0,
+        'completedSeries': 0,
+      };
+    }
+  }
+
+  Future<void> _vaiASettimana(int week) async {
+    if (week == widget.scheda.settimanaCorrente) return;
+
+    _snapshotCurrentWeek();
+    final restored = _applySnapshotForWeek(week);
+    if (!restored) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Nessun dato salvato per la settimana $week.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    _scheduleBozzaSave();
   }
 
   Future<void> _caricaDatabase() async {
@@ -1185,7 +1267,7 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
 
   Future<void> _apriGestioneSettimane() async {
     _snapshotCurrentWeek();
-    final weeks = _weekSnapshots.keys.toList()..sort();
+    final weeks = _sortedWeekTimeline();
 
     if (weeks.isEmpty) {
       if (!mounted) return;
@@ -1207,37 +1289,61 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
             shrinkWrap: true,
             children: [
               const ListTile(
-                title: Text('Gestione settimane', style: TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: Text('Elimina una settimana salvata'),
+                title: Text('Timeline settimane', style: TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: Text('Tocca una settimana per aprirla o gestiscila da qui'),
               ),
               ...weeks.map((w) {
                 final isCurrent = w == widget.scheda.settimanaCorrente;
+                final stats = _statsForWeek(w);
+                final completed = stats['completedSeries'] ?? 0;
+                final total = stats['totalSeries'] ?? 0;
+                final exercises = stats['exercises'] ?? 0;
+
                 return ListTile(
-                  leading: Icon(isCurrent ? Icons.play_arrow : Icons.calendar_today, color: isCurrent ? Colors.greenAccent : Colors.white70),
+                  onTap: () async {
+                    Navigator.pop(context);
+                    await _vaiASettimana(w);
+                  },
+                  leading: Icon(
+                    isCurrent ? Icons.play_circle_fill : Icons.calendar_month,
+                    color: isCurrent ? Colors.greenAccent : Colors.white70,
+                  ),
                   title: Text('Settimana $w${isCurrent ? ' (corrente)' : ''}'),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.delete_forever, color: Colors.redAccent),
-                    onPressed: () async {
-                      Navigator.pop(context);
-                      final confirmed = await showDialog<bool>(
-                        context: this.context,
-                        builder: (context) => AlertDialog(
-                          title: const Text('Elimina settimana'),
-                          content: Text('Confermi eliminazione della settimana $w? L\'azione sincronizza anche il cloud.'),
-                          actions: [
-                            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annulla')),
-                            ElevatedButton(
-                              style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
-                              onPressed: () => Navigator.pop(context, true),
-                              child: const Text('Elimina'),
-                            ),
-                          ],
+                  subtitle: Text('$exercises esercizi • $completed/$total serie completate'),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (isCurrent)
+                        const Padding(
+                          padding: EdgeInsets.only(right: 6),
+                          child: Icon(Icons.star, color: Colors.amber, size: 18),
                         ),
-                      );
-                      if (confirmed == true) {
-                        await _eliminaSettimana(w);
-                      }
-                    },
+                      IconButton(
+                        tooltip: 'Elimina settimana $w',
+                        icon: const Icon(Icons.delete_forever, color: Colors.redAccent),
+                        onPressed: () async {
+                          Navigator.pop(context);
+                          final confirmed = await showDialog<bool>(
+                            context: this.context,
+                            builder: (context) => AlertDialog(
+                              title: const Text('Elimina settimana'),
+                              content: Text('Confermi eliminazione della settimana $w? L\'azione sincronizza anche il cloud.'),
+                              actions: [
+                                TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annulla')),
+                                ElevatedButton(
+                                  style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
+                                  onPressed: () => Navigator.pop(context, true),
+                                  child: const Text('Elimina'),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (confirmed == true) {
+                            await _eliminaSettimana(w);
+                          }
+                        },
+                      ),
+                    ],
                   ),
                 );
               }),
@@ -1250,57 +1356,105 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
   }
 
   Widget _buildSchedaHeaderCompatto() {
-    final totalExercises = widget.scheda.esercizi.length;
-    final totalSeries = widget.scheda.esercizi.fold<int>(
-      0,
-      (total, e) => total + e.serieAttive.where((s) => s.tipo != 'Avvicinamento').length,
-    );
-    final completedSeries = widget.scheda.esercizi.fold<int>(
-      0,
-      (total, e) => total + e.serieAttive.where((s) => s.tipo != 'Avvicinamento' && s.isCompletata).length,
-    );
+    final stats = _statsFromScheda(widget.scheda);
+    final totalExercises = stats['exercises'] ?? 0;
+    final totalSeries = stats['totalSeries'] ?? 0;
+    final completedSeries = stats['completedSeries'] ?? 0;
     final completionRatio = totalSeries == 0 ? 0.0 : completedSeries / totalSeries;
+    final weeks = _sortedWeekTimeline();
+    final canGoBack = widget.scheda.settimanaCorrente > 1;
 
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      margin: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: const Color(0xFF1A1A1A),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: Colors.white12),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                icon: const Icon(Icons.chevron_left, color: Colors.lightBlueAccent, size: 20),
-                tooltip: 'Settimana precedente',
-                onPressed: _vaiSettimanaPrecedente,
-              ),
-              Expanded(
+              const Icon(Icons.timeline, color: Colors.lightBlueAccent, size: 18),
+              const SizedBox(width: 8),
+              const Expanded(
                 child: Text(
-                  'Settimana ${widget.scheda.settimanaCorrente}',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                  'Progressione settimanale',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
                 ),
               ),
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                icon: const Icon(Icons.chevron_right, color: Colors.greenAccent, size: 20),
-                tooltip: 'Settimana successiva',
-                onPressed: _vaiSettimanaSuccessiva,
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: Colors.greenAccent.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.greenAccent.withValues(alpha: 0.4)),
+                ),
+                child: Text(
+                  'W${widget.scheda.settimanaCorrente}',
+                  style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.greenAccent),
+                ),
               ),
             ],
           ),
-          const SizedBox(height: 2),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              OutlinedButton.icon(
+                onPressed: canGoBack ? _vaiSettimanaPrecedente : null,
+                icon: const Icon(Icons.chevron_left, size: 18),
+                label: const Text('Precedente'),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _vaiSettimanaSuccessiva,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.deepOrange,
+                    foregroundColor: Colors.white,
+                  ),
+                  icon: const Icon(Icons.trending_up, size: 18),
+                  label: Text('Pianifica W${widget.scheda.settimanaCorrente + 1}'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                tooltip: 'Apri timeline settimane',
+                onPressed: _apriGestioneSettimane,
+                icon: const Icon(Icons.view_timeline, color: Colors.amber, size: 20),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: weeks.map((w) {
+                final isCurrent = w == widget.scheda.settimanaCorrente;
+                final hasSnapshot = _weekSnapshots.containsKey(w) || isCurrent;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: ChoiceChip(
+                    label: Text('W$w'),
+                    selected: isCurrent,
+                    selectedColor: Colors.greenAccent.withValues(alpha: 0.2),
+                    backgroundColor: Colors.black26,
+                    side: BorderSide(
+                      color: isCurrent
+                          ? Colors.greenAccent.withValues(alpha: 0.6)
+                          : Colors.white12,
+                    ),
+                    onSelected: hasSnapshot ? (_) => _vaiASettimana(w) : null,
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          const SizedBox(height: 8),
           Row(
             children: [
               Expanded(
@@ -1308,72 +1462,12 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
                   '$totalExercises esercizi • $completedSeries/$totalSeries serie completate',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white70, fontSize: 11),
+                  style: const TextStyle(color: Colors.white70, fontSize: 12),
                 ),
               ),
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                tooltip: 'Gestisci settimane',
-                onPressed: _apriGestioneSettimane,
-                icon: const Icon(Icons.delete_sweep, color: Colors.redAccent, size: 16),
-              ),
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                tooltip: 'Solo incompleti',
-                onPressed: () {
-                  setState(() {
-                    _showOnlyIncomplete = !_showOnlyIncomplete;
-                  });
-                },
-                icon: Icon(
-                  _showOnlyIncomplete ? Icons.filter_alt : Icons.filter_alt_outlined,
-                  color: _showOnlyIncomplete ? Colors.amber : Colors.white54,
-                  size: 16,
-                ),
-              ),
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                tooltip: 'Modalita compatta',
-                onPressed: () {
-                  setState(() {
-                    _compactMode = !_compactMode;
-                  });
-                },
-                icon: Icon(
-                  _compactMode ? Icons.view_agenda : Icons.view_stream,
-                  color: _compactMode ? Colors.lightBlueAccent : Colors.white54,
-                  size: 16,
-                ),
-              ),
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                tooltip: 'Calcola dischi',
-                onPressed: _apriCalcolatoreDischi,
-                icon: const Icon(Icons.calculate, size: 16, color: Colors.white70),
-              ),
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                tooltip: 'Aggiungi esercizio',
-                onPressed: () async {
-                  final nuovo = await Navigator.push(context, MaterialPageRoute(builder: (context) => const CreaEsercizioScreen()));
-                  if (nuovo != null) {
-                    setState(() {
-                      widget.scheda.esercizi.add(nuovo);
-                    });
-                    _scheduleBozzaSave();
-                  }
-                },
-                icon: const Icon(Icons.add, size: 16, color: Colors.white70),
+              Text(
+                '${(completionRatio * 100).toStringAsFixed(0)}%',
+                style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.w700),
               ),
             ],
           ),
@@ -1386,6 +1480,59 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
               backgroundColor: Colors.white12,
               valueColor: const AlwaysStoppedAnimation<Color>(Colors.greenAccent),
             ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              FilterChip(
+                label: const Text('Solo incompleti'),
+                selected: _showOnlyIncomplete,
+                onSelected: (_) {
+                  setState(() {
+                    _showOnlyIncomplete = !_showOnlyIncomplete;
+                  });
+                },
+                avatar: Icon(
+                  _showOnlyIncomplete ? Icons.filter_alt : Icons.filter_alt_outlined,
+                  size: 16,
+                  color: _showOnlyIncomplete ? Colors.amber : Colors.white70,
+                ),
+              ),
+              FilterChip(
+                label: const Text('Vista compatta'),
+                selected: _compactMode,
+                onSelected: (_) {
+                  setState(() {
+                    _compactMode = !_compactMode;
+                  });
+                },
+                avatar: Icon(
+                  _compactMode ? Icons.view_agenda : Icons.view_stream,
+                  size: 16,
+                  color: _compactMode ? Colors.lightBlueAccent : Colors.white70,
+                ),
+              ),
+              ActionChip(
+                label: const Text('Calcola dischi'),
+                avatar: const Icon(Icons.calculate, size: 16),
+                onPressed: _apriCalcolatoreDischi,
+              ),
+              ActionChip(
+                label: const Text('Aggiungi esercizio'),
+                avatar: const Icon(Icons.add, size: 16),
+                onPressed: () async {
+                  final nuovo = await Navigator.push(context, MaterialPageRoute(builder: (context) => const CreaEsercizioScreen()));
+                  if (nuovo != null) {
+                    setState(() {
+                      widget.scheda.esercizi.add(nuovo);
+                    });
+                    _scheduleBozzaSave();
+                  }
+                },
+              ),
+            ],
           ),
         ],
       ),

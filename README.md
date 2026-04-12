@@ -34,6 +34,7 @@ Applicazione **Flutter** per la gestione completa dell’allenamento **atleta/co
 
 ### AI (Gemini via proxy)
 - Import schede da **foto** tramite endpoint proxy
+- Import schede da **PDF** con estrazione programmazione **week/sedute**
 - Review di una cartella allenamenti con **analisi testuale AI**
 - Normalizzazione nomi esercizi + fallback dizionario EN→IT
 
@@ -157,6 +158,7 @@ firebase deploy --only functions
 
 Endpoint (esempi):
 - `POST {AI_PROXY_BASE_URL}/analyzeWorkoutPhoto`
+- `POST {AI_PROXY_BASE_URL}/analyzeWorkoutPdf`
 - `POST {AI_PROXY_BASE_URL}/reviewWorkoutFolder`
 
 ### Opzione B — Cloudflare Worker (alternativa)

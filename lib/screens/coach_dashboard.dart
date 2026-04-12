@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'libreria_schede_screen.dart';
-import 'invia_scheda_screen.dart';
+import 'coach/libreria_schede_screen.dart';
+import 'coach/invia_scheda_screen.dart';
 
 // ============================================================================
 // 1. SCHERMATA PRINCIPALE (HUB COACH)

@@ -3,7 +3,7 @@ import 'package:palestra/models/scheda.dart';
 
 void main() {
   group('Scheda legacy defaults', () {
-    test('without id defaults to week 1', () {
+    test('without id keeps provided week', () {
       final scheda = Scheda.fromJson({
         'nome': 'Forza A',
         'livello': 'Intermedio',
@@ -13,7 +13,7 @@ void main() {
       });
 
       expect(scheda.id.isNotEmpty, true);
-      expect(scheda.settimanaCorrente, 1);
+      expect(scheda.settimanaCorrente, 4);
     });
 
     test('with id keeps saved week', () {

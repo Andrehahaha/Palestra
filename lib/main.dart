@@ -6,12 +6,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'firebase_options.dart';
 
 // 👇 Import delle tue nuove schermate belle in ordine!
-import 'screens/login_screen.dart';
-import 'screens/coach_dashboard.dart';
-import 'screens/home_screen.dart';
-import 'screens/workouts_screen.dart';
-import 'screens/profilo_screen.dart';
-import 'screens/dolore_screen.dart';
+import 'screens/auth/login_screen.dart';
+import 'screens/coach/coach_dashboard.dart';
+import 'screens/home/home_screen.dart';
+import 'screens/training/workouts_screen.dart';
+import 'screens/profile/profilo_screen.dart';
+import 'screens/wellness/dolore_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();

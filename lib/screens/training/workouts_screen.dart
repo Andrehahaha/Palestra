@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:pdf/pdf.dart';
@@ -40,7 +41,7 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
   static const String _weekHistoryStoreKey = 'week_history_store_v1';
 
   List<Scheda> mieSchede = [];
-  List<Allenamento> storico = []; 
+  List<Allenamento> storico = [];
   List<String> cartelleVuote = [];
   bool _isLoading = true;
 
@@ -63,13 +64,33 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
 
   String _big3Key(String nome) {
     final n = _norm(nome);
-    final isPancaBilancierePresaMedia = n.contains('panca') && n.contains('bilanciere') && n.contains('presa media');
-    final isSquatCompletoBilanciere = n.contains('squat') && n.contains('completo') && n.contains('bilanciere');
+    final isPancaBilancierePresaMedia =
+        n.contains('panca') &&
+        n.contains('bilanciere') &&
+        n.contains('presa media');
+    final isSquatCompletoBilanciere =
+        n.contains('squat') &&
+        n.contains('completo') &&
+        n.contains('bilanciere');
     final isStaccoBilanciere = n.contains('stacco') && n.contains('bilanciere');
-    final isStaccoConventional = n.contains('conventional') && n.contains('deadlift');
-    if (n.contains('panca piana') || n.contains('bench press') || n == 'panca' || isPancaBilancierePresaMedia) return 'panca piana';
-    if (n == 'squat' || n.contains('back squat') || isSquatCompletoBilanciere) return 'squat';
-    if (n.contains('stacco da terra') || n.contains('deadlift') || n == 'stacco' || isStaccoBilanciere || isStaccoConventional) return 'stacco da terra';
+    final isStaccoConventional =
+        n.contains('conventional') && n.contains('deadlift');
+    if (n.contains('panca piana') ||
+        n.contains('bench press') ||
+        n == 'panca' ||
+        isPancaBilancierePresaMedia) {
+      return 'panca piana';
+    }
+    if (n == 'squat' || n.contains('back squat') || isSquatCompletoBilanciere) {
+      return 'squat';
+    }
+    if (n.contains('stacco da terra') ||
+        n.contains('deadlift') ||
+        n == 'stacco' ||
+        isStaccoBilanciere ||
+        isStaccoConventional) {
+      return 'stacco da terra';
+    }
     return '';
   }
 
@@ -127,7 +148,10 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       try {
-        final doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+        final doc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .get();
         final prCloud = doc.data()?['personal_records'];
         if (prCloud is Map) {
           for (final e in prCloud.entries) {
@@ -141,7 +165,10 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
     return out;
   }
 
-  Scheda _applicaFallbackPrSuSchedaCoach(Scheda scheda, Map<String, double> prs) {
+  Scheda _applicaFallbackPrSuSchedaCoach(
+    Scheda scheda,
+    Map<String, double> prs,
+  ) {
     for (final es in scheda.esercizi) {
       if (es.modalitaIntensita != 'percentuale') continue;
       final perc = es.percentualeMassimale;
@@ -159,13 +186,17 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
       );
 
       for (final s in es.serieAttive.where((s) => s.tipo != 'Avvicinamento')) {
-        final percSerie = double.tryParse(s.percentualeTarget.replaceAll(',', '.'));
+        final percSerie = double.tryParse(
+          s.percentualeTarget.replaceAll(',', '.'),
+        );
         final caricoSerie = WorkloadCalculator.calculateFromMaxAndPercentage(
           oneRepMax: rm,
           percentage: percSerie ?? perc,
         );
         if (s.percentualeTarget.trim().isEmpty) {
-          s.percentualeTarget = (percSerie ?? perc).toStringAsFixed(((percSerie ?? perc) % 1 == 0) ? 0 : 1);
+          s.percentualeTarget = (percSerie ?? perc).toStringAsFixed(
+            ((percSerie ?? perc) % 1 == 0) ? 0 : 1,
+          );
         }
         if (s.peso.trim().isEmpty) {
           s.peso = caricoSerie.toStringAsFixed(1);
@@ -208,14 +239,18 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text('Per calcolare i carichi in percentuale inserisci i tuoi massimali:'),
+              const Text(
+                'Per calcolare i carichi in percentuale inserisci i tuoi massimali:',
+              ),
               const SizedBox(height: 12),
               ...mancanti.map(
                 (nome) => Padding(
                   padding: const EdgeInsets.only(bottom: 10),
                   child: TextField(
                     controller: controllers[nome],
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
                     decoration: InputDecoration(
                       labelText: '$nome (kg)',
                       border: const OutlineInputBorder(),
@@ -227,8 +262,14 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Dopo')),
-          ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Salva e calcola')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Dopo'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Salva e calcola'),
+          ),
         ],
       ),
     );
@@ -261,16 +302,21 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
         try {
-          await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-            'personal_records': records,
-            'ultimo_aggiornamento_pr': DateTime.now().toIso8601String(),
-          }, SetOptions(merge: true));
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .set({
+                'personal_records': records,
+                'ultimo_aggiornamento_pr': DateTime.now().toIso8601String(),
+              }, SetOptions(merge: true));
         } catch (_) {}
       }
 
       final prs = await _caricaPrAtleta();
       _updateState(() {
-        for (final scheda in mieSchede.where((s) => s.categoria == 'Dal Coach 🐯')) {
+        for (final scheda in mieSchede.where(
+          (s) => s.categoria == 'Dal Coach 🐯',
+        )) {
           _applicaFallbackPrSuSchedaCoach(scheda, prs);
         }
       });
@@ -313,15 +359,21 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
     if (user == null) return;
     try {
       final prs = await _caricaPrAtleta();
-      final snapshot = await FirebaseFirestore.instance.collection('schede_assegnate').where('atletaId', isEqualTo: user.uid).get();
+      final snapshot = await FirebaseFirestore.instance
+          .collection('schede_assegnate')
+          .where('atletaId', isEqualTo: user.uid)
+          .get();
       int nuoveSchede = 0;
       final schedeNuove = <Scheda>[];
       for (var doc in snapshot.docs) {
         final data = doc.data();
         bool giaPresente = mieSchede.any((s) => s.nome == data['nome']);
         if (!giaPresente) {
-          final schedaDalCoach = _applicaFallbackPrSuSchedaCoach(Scheda.fromJson(data), prs);
-          schedaDalCoach.categoria = 'Dal Coach 🐯'; 
+          final schedaDalCoach = _applicaFallbackPrSuSchedaCoach(
+            Scheda.fromJson(data),
+            prs,
+          );
+          schedaDalCoach.categoria = 'Dal Coach 🐯';
           _updateState(() {
             mieSchede.add(schedaDalCoach);
           });
@@ -332,9 +384,21 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
       if (nuoveSchede > 0) {
         await _salvaDati();
         await _chiediPrMancantiSeNecessario(schedeNuove);
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Hai ricevuto $nuoveSchede nuove schede! 🎁'), backgroundColor: Colors.green));
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Hai ricevuto $nuoveSchede nuove schede! 🎁'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
       } else if (!silenzioso && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Nessuna nuova scheda dal Coach.'), backgroundColor: Colors.grey));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Nessuna nuova scheda dal Coach.'),
+            backgroundColor: Colors.grey,
+          ),
+        );
       }
     } catch (e) {
       debugPrint("Errore sync: $e");
@@ -353,7 +417,7 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
           .get();
 
       for (var doc in snapshot.docs) {
-        await doc.reference.delete(); 
+        await doc.reference.delete();
       }
     } catch (e) {
       debugPrint("Errore eliminazione scheda cloud: $e");
@@ -368,11 +432,18 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
         'atletaId': user.uid,
         'data': allenamento.data.toIso8601String(),
         'nomeScheda': allenamento.scheda.nome,
-        'esercizi': allenamento.scheda.esercizi.map((e) => {
-          'nome': DizionarioEsercizi.daIngleseAItaliano[e.nome] ?? e.nome,
-          'target_ripetizioni': e.ripetizioni, 
-          'serie': e.serieAttive.where((s) => s.isCompletata).map((s) => { 'peso': s.peso, 'tipo': s.tipo }).toList(),
-        }).toList(),
+        'esercizi': allenamento.scheda.esercizi
+            .map(
+              (e) => {
+                'nome': DizionarioEsercizi.daIngleseAItaliano[e.nome] ?? e.nome,
+                'target_ripetizioni': e.ripetizioni,
+                'serie': e.serieAttive
+                    .where((s) => s.isCompletata)
+                    .map((s) => {'peso': s.peso, 'tipo': s.tipo})
+                    .toList(),
+              },
+            )
+            .toList(),
       });
     } catch (e) {
       debugPrint("Errore invio allenamento: $e");
@@ -386,28 +457,41 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
     final String? cartelleVuoteSalvate = prefs.getString(_cartelleVuoteKey);
     final String? zonaSalvata = prefs.getString(zonaStretchingSharedKey);
     final String? localWeekHistoryRaw = prefs.getString(_weekHistoryStoreKey);
-    final String? localUpdatedAtRaw = prefs.getString(_appStateUpdatedAtLocalKey);
+    final String? localUpdatedAtRaw = prefs.getString(
+      _appStateUpdatedAtLocalKey,
+    );
     final DateTime? localUpdatedAt = DateTime.tryParse(localUpdatedAtRaw ?? '');
 
     List<Scheda> schedeCaricate = datiSalvati != null
-        ? (jsonDecode(datiSalvati) as List).map((e) => Scheda.fromJson(e)).toList()
+        ? (jsonDecode(datiSalvati) as List)
+              .map((e) => Scheda.fromJson(e))
+              .toList()
         : [];
     List<Allenamento> storicoCaricato = storicoSalvato != null
-        ? (jsonDecode(storicoSalvato) as List).map((e) => Allenamento.fromJson(e)).toList()
+        ? (jsonDecode(storicoSalvato) as List)
+              .map((e) => Allenamento.fromJson(e))
+              .toList()
         : [];
     List<String> cartelleCaricate = cartelleVuoteSalvate != null
         ? List<String>.from(jsonDecode(cartelleVuoteSalvate))
         : [];
-    String zonaCaricata = zoneDolore.contains(zonaSalvata) ? zonaSalvata! : _zonaStretchingSelezionata;
+    String zonaCaricata = zoneDolore.contains(zonaSalvata)
+        ? zonaSalvata!
+        : _zonaStretchingSelezionata;
     final hasLocalState =
-      schedeCaricate.isNotEmpty || storicoCaricato.isNotEmpty || cartelleCaricate.isNotEmpty;
+        schedeCaricate.isNotEmpty ||
+        storicoCaricato.isNotEmpty ||
+        cartelleCaricate.isNotEmpty;
     DateTime? chosenUpdatedAt = localUpdatedAt;
     String? chosenWeekHistoryRaw = localWeekHistoryRaw;
 
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       try {
-        final doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+        final doc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .get();
         final data = doc.data();
         final appState = data?['app_state'];
 
@@ -420,9 +504,11 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
             cloudUpdatedAt = DateTime.tryParse(rawUpdated.toString());
           }
 
-          final shouldUseCloud = !hasLocalState ||
+          final shouldUseCloud =
+              !hasLocalState ||
               (cloudUpdatedAt != null &&
-                  (localUpdatedAt == null || cloudUpdatedAt.isAfter(localUpdatedAt)));
+                  (localUpdatedAt == null ||
+                      cloudUpdatedAt.isAfter(localUpdatedAt)));
           if (shouldUseCloud) {
             final cloudSchede = appState['schede_salvate'];
             final cloudStorico = appState['storico_salvato'];
@@ -432,26 +518,33 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
 
             if (cloudSchede is List) {
               schedeCaricate = cloudSchede
-                  .map((e) => Scheda.fromJson(Map<String, dynamic>.from(e as Map)))
+                  .map(
+                    (e) => Scheda.fromJson(Map<String, dynamic>.from(e as Map)),
+                  )
                   .toList();
             }
             if (cloudStorico is List) {
               storicoCaricato = cloudStorico
-                  .map((e) => Allenamento.fromJson(Map<String, dynamic>.from(e as Map)))
+                  .map(
+                    (e) => Allenamento.fromJson(
+                      Map<String, dynamic>.from(e as Map),
+                    ),
+                  )
                   .toList();
             }
             if (cloudCartelle is List) {
-              cartelleCaricate = cloudCartelle.map((e) => e.toString()).toList();
+              cartelleCaricate = cloudCartelle
+                  .map((e) => e.toString())
+                  .toList();
             }
             if (cloudZona is String && zoneDolore.contains(cloudZona)) {
               zonaCaricata = cloudZona;
             }
             if (cloudWeekHistory is Map) {
-              chosenWeekHistoryRaw = jsonEncode(Map<String, dynamic>.from(cloudWeekHistory));
-              await prefs.setString(
-                _weekHistoryStoreKey,
-                chosenWeekHistoryRaw,
+              chosenWeekHistoryRaw = jsonEncode(
+                Map<String, dynamic>.from(cloudWeekHistory),
               );
+              await prefs.setString(_weekHistoryStoreKey, chosenWeekHistoryRaw);
             }
 
             chosenUpdatedAt = cloudUpdatedAt ?? localUpdatedAt;
@@ -461,6 +554,8 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
         debugPrint('Errore caricamento stato cloud: $e');
       }
     }
+
+    schedeCaricate = AiService.migrateLegacySetRepInSavedSchede(schedeCaricate);
 
     if (mounted) {
       setState(() {
@@ -473,11 +568,18 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
       });
     }
 
-    await prefs.setString('schede_salvate', jsonEncode(schedeCaricate.map((e) => e.toJson()).toList()));
-    await prefs.setString('storico_salvato', jsonEncode(storicoCaricato.map((e) => e.toJson()).toList()));
+    await prefs.setString(
+      'schede_salvate',
+      jsonEncode(schedeCaricate.map((e) => e.toJson()).toList()),
+    );
+    await prefs.setString(
+      'storico_salvato',
+      jsonEncode(storicoCaricato.map((e) => e.toJson()).toList()),
+    );
     await prefs.setString(_cartelleVuoteKey, jsonEncode(cartelleCaricate));
     await prefs.setString(zonaStretchingSharedKey, zonaCaricata);
-    if (chosenWeekHistoryRaw != null && chosenWeekHistoryRaw.trim().isNotEmpty) {
+    if (chosenWeekHistoryRaw != null &&
+        chosenWeekHistoryRaw.trim().isNotEmpty) {
       await prefs.setString(_weekHistoryStoreKey, chosenWeekHistoryRaw);
     }
     await prefs.setString(
@@ -524,10 +626,19 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
 
   Future<void> _salvaDati() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('schede_salvate', jsonEncode(mieSchede.map((e) => e.toJson()).toList()));
-    await prefs.setString('storico_salvato', jsonEncode(storico.map((e) => e.toJson()).toList()));
+    await prefs.setString(
+      'schede_salvate',
+      jsonEncode(mieSchede.map((e) => e.toJson()).toList()),
+    );
+    await prefs.setString(
+      'storico_salvato',
+      jsonEncode(storico.map((e) => e.toJson()).toList()),
+    );
     await prefs.setString(_cartelleVuoteKey, jsonEncode(cartelleVuote));
-    await prefs.setString(_appStateUpdatedAtLocalKey, DateTime.now().toIso8601String());
+    await prefs.setString(
+      _appStateUpdatedAtLocalKey,
+      DateTime.now().toIso8601String(),
+    );
     await _sincronizzaStatoLocaleSuCloud();
   }
 

@@ -1,7 +1,7 @@
 plugins {
     id("com.android.application")
     // START: FlutterFire Configuration
-    id("com.google.gms.google-services")
+    id("com.google.gms.google-services") apply false
     // END: FlutterFire Configuration
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
@@ -9,6 +9,19 @@ plugins {
 }
 
 import java.util.Properties
+
+val hasGoogleServicesConfig = listOf(
+    "google-services.json",
+    "src/google-services.json",
+    "src/debug/google-services.json",
+    "src/release/google-services.json",
+).map(::file).any { it.exists() }
+
+if (hasGoogleServicesConfig) {
+    apply(plugin = "com.google.gms.google-services")
+} else {
+    logger.lifecycle("google-services.json non trovato in android/app: plugin Google Services disattivato per questo build.")
+}
 
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("key.properties")

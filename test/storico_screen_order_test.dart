@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:palestra/models/allenamento.dart';
 import 'package:palestra/models/esercizio.dart';
 import 'package:palestra/models/scheda.dart';
-import 'package:palestra/screens/storico_screen.dart';
+import 'package:palestra/screens/training/storico_screen.dart';
 
 Allenamento _makeAllenamento({
   required String nomeScheda,

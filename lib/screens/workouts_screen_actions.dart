@@ -16,7 +16,10 @@ extension _WorkoutsScreenActions on _WorkoutsScreenState {
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annulla')),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Annulla'),
+          ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, controller.text.trim()),
             child: const Text('Crea'),
@@ -28,10 +31,15 @@ extension _WorkoutsScreenActions on _WorkoutsScreenState {
     final nome = nomeCartella?.trim() ?? '';
     if (nome.isEmpty || !mounted) return;
 
-    final esisteGia = cartelleVuote.contains(nome) || mieSchede.any((s) => s.categoria == nome);
+    final esisteGia =
+        cartelleVuote.contains(nome) ||
+        mieSchede.any((s) => s.categoria == nome);
     if (esisteGia) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Esiste già una cartella con questo nome.'), backgroundColor: Colors.orange),
+        const SnackBar(
+          content: Text('Esiste già una cartella con questo nome.'),
+          backgroundColor: Colors.orange,
+        ),
       );
       return;
     }
@@ -42,7 +50,10 @@ extension _WorkoutsScreenActions on _WorkoutsScreenState {
     await _salvaDati();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Cartella vuota creata ✅'), backgroundColor: Colors.green),
+      const SnackBar(
+        content: Text('Cartella vuota creata ✅'),
+        backgroundColor: Colors.green,
+      ),
     );
   }
 
@@ -53,9 +64,15 @@ extension _WorkoutsScreenActions on _WorkoutsScreenState {
         title: const Text('Conferma eliminazione cloud'),
         content: Text('Vuoi eliminare $target anche sul cloud?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('No')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('No'),
+          ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+            ),
             onPressed: () => Navigator.pop(context, true),
             child: const Text('Sì, elimina'),
           ),
@@ -66,22 +83,90 @@ extension _WorkoutsScreenActions on _WorkoutsScreenState {
     return conferma == true;
   }
 
+  // Backward-compatible helper used by legacy sections UI.
   Future<void> _eliminaCartellaVuota(String nomeCategoria) async {
-    final conferma = await _confermaEliminazioneCloud('la cartella "$nomeCategoria"');
+    await _eliminaCartellaConContenuto(nomeCategoria, const <Scheda>[]);
+  }
+
+  Future<bool> _confermaEliminazioneCartellaCompleta(
+    String nomeCategoria,
+    int schedeCount,
+  ) async {
+    final bool? conferma = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Elimina cartella'),
+        content: Text(
+          schedeCount > 0
+              ? 'Eliminare la cartella "$nomeCategoria" e tutte le sue $schedeCount schede? Questa azione e irreversibile.'
+              : 'Eliminare la cartella vuota "$nomeCategoria"?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annulla'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Elimina tutto'),
+          ),
+        ],
+      ),
+    );
+
+    return conferma == true;
+  }
+
+  Future<void> _eliminaCartellaConContenuto(
+    String nomeCategoria,
+    List<Scheda> schedeDiQuestaCategoria,
+  ) async {
+    final schedeCount = schedeDiQuestaCategoria.length;
+    final conferma = await _confermaEliminazioneCartellaCompleta(
+      nomeCategoria,
+      schedeCount,
+    );
     if (!conferma || !mounted) return;
 
+    final nomiDaEliminareCloud = mieSchede
+        .where((s) => s.categoria == nomeCategoria)
+        .map((s) => s.nome)
+        .toSet()
+        .toList();
+
     _updateState(() {
+      mieSchede.removeWhere((s) => s.categoria == nomeCategoria);
       cartelleVuote.remove(nomeCategoria);
     });
+
     await _salvaDati();
+
+    for (final nomeScheda in nomiDaEliminareCloud) {
+      await _eliminaSchedaDalCloud(nomeScheda);
+    }
+
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Cartella vuota eliminata 🗑️'), backgroundColor: Colors.green),
+      SnackBar(
+        content: Text(
+          schedeCount > 0
+              ? 'Cartella eliminata con $schedeCount schede 🗑️'
+              : 'Cartella vuota eliminata 🗑️',
+        ),
+        backgroundColor: Colors.green,
+      ),
     );
   }
 
   Future<void> _creaSchedaCompleta() async {
-    final nuovaScheda = await Navigator.push(context, MaterialPageRoute(builder: (context) => const CreaSchedaScreen()));
+    final nuovaScheda = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const CreaSchedaScreen()),
+    );
     if (nuovaScheda != null && nuovaScheda is Scheda) {
       _updateState(() {
         mieSchede.add(nuovaScheda);
@@ -98,7 +183,9 @@ extension _WorkoutsScreenActions on _WorkoutsScreenState {
 
     if (esercizio == null || !mounted) return;
 
-    final nomeController = TextEditingController(text: 'Scheda ${esercizio.nome}');
+    final nomeController = TextEditingController(
+      text: 'Scheda ${esercizio.nome}',
+    );
     final categoriaController = TextEditingController(text: 'Generale');
     String livelloSelezionato = 'Principiante';
 
@@ -112,19 +199,33 @@ extension _WorkoutsScreenActions on _WorkoutsScreenState {
             children: [
               TextField(
                 controller: nomeController,
-                decoration: const InputDecoration(labelText: 'Nome scheda', border: OutlineInputBorder()),
+                decoration: const InputDecoration(
+                  labelText: 'Nome scheda',
+                  border: OutlineInputBorder(),
+                ),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: categoriaController,
-                decoration: const InputDecoration(labelText: 'Categoria / Cartella', border: OutlineInputBorder()),
+                decoration: const InputDecoration(
+                  labelText: 'Categoria / Cartella',
+                  border: OutlineInputBorder(),
+                ),
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 initialValue: livelloSelezionato,
-                decoration: const InputDecoration(labelText: 'Livello', border: OutlineInputBorder()),
+                decoration: const InputDecoration(
+                  labelText: 'Livello',
+                  border: OutlineInputBorder(),
+                ),
                 items: ['Principiante', 'Intermedio', 'Avanzato']
-                    .map((livello) => DropdownMenuItem(value: livello, child: Text(livello)))
+                    .map(
+                      (livello) => DropdownMenuItem(
+                        value: livello,
+                        child: Text(livello),
+                      ),
+                    )
                     .toList(),
                 onChanged: (val) {
                   if (val == null) return;
@@ -134,8 +235,14 @@ extension _WorkoutsScreenActions on _WorkoutsScreenState {
             ],
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annulla')),
-            ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Crea')),
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Annulla'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Crea'),
+            ),
           ],
         ),
       ),
@@ -160,7 +267,10 @@ extension _WorkoutsScreenActions on _WorkoutsScreenState {
     });
     _salvaDati();
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Scheda singola creata! ✅'), backgroundColor: Colors.green),
+      const SnackBar(
+        content: Text('Scheda singola creata! ✅'),
+        backgroundColor: Colors.green,
+      ),
     );
   }
 
@@ -168,7 +278,9 @@ extension _WorkoutsScreenActions on _WorkoutsScreenState {
     if (!mounted) return;
     await showModalBottomSheet(
       context: context,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
       builder: (context) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -183,7 +295,10 @@ extension _WorkoutsScreenActions on _WorkoutsScreenState {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.note_add, color: Colors.lightBlueAccent),
+              leading: const Icon(
+                Icons.note_add,
+                color: Colors.lightBlueAccent,
+              ),
               title: const Text('Nuova scheda singola'),
               subtitle: const Text('Crea una scheda con un solo esercizio'),
               onTap: () {
@@ -218,7 +333,10 @@ extension _WorkoutsScreenActions on _WorkoutsScreenState {
 
     _salvaDati();
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Scheda duplicata con successo! 📄🔄'), backgroundColor: Colors.blueAccent),
+      const SnackBar(
+        content: Text('Scheda duplicata con successo! 📄🔄'),
+        backgroundColor: Colors.blueAccent,
+      ),
     );
   }
 
@@ -227,16 +345,28 @@ extension _WorkoutsScreenActions on _WorkoutsScreenState {
     String? nuovoNome = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Rinomina Scheda', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          'Rinomina Scheda',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         content: TextField(
           controller: controller,
-          decoration: const InputDecoration(hintText: 'Nuovo nome...', border: OutlineInputBorder()),
+          decoration: const InputDecoration(
+            hintText: 'Nuovo nome...',
+            border: OutlineInputBorder(),
+          ),
           autofocus: true,
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annulla', style: TextStyle(color: Colors.grey))),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Annulla', style: TextStyle(color: Colors.grey)),
+          ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.deepOrange, foregroundColor: Colors.white),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.deepOrange,
+              foregroundColor: Colors.white,
+            ),
             onPressed: () => Navigator.pop(context, controller.text.trim()),
             child: const Text('Salva'),
           ),
@@ -250,7 +380,12 @@ extension _WorkoutsScreenActions on _WorkoutsScreenState {
         scheda.nome = nuovoNome;
       });
       _salvaDati();
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Nome aggiornato! ✏️'), backgroundColor: Colors.green));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Nome aggiornato! ✏️'),
+          backgroundColor: Colors.green,
+        ),
+      );
     }
   }
 
@@ -259,16 +394,28 @@ extension _WorkoutsScreenActions on _WorkoutsScreenState {
     String? nuovoNome = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Rinomina Cartella', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          'Rinomina Cartella',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         content: TextField(
           controller: controller,
-          decoration: const InputDecoration(hintText: 'Es: Settimana 1...', border: OutlineInputBorder()),
+          decoration: const InputDecoration(
+            hintText: 'Es: Settimana 1...',
+            border: OutlineInputBorder(),
+          ),
           autofocus: true,
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annulla', style: TextStyle(color: Colors.grey))),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Annulla', style: TextStyle(color: Colors.grey)),
+          ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.deepOrange, foregroundColor: Colors.white),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.deepOrange,
+              foregroundColor: Colors.white,
+            ),
             onPressed: () => Navigator.pop(context, controller.text.trim()),
             child: const Text('Salva'),
           ),
@@ -285,8 +432,17 @@ extension _WorkoutsScreenActions on _WorkoutsScreenState {
     }
   }
 
-  Future<void> _esportaCartellaInPDF(String nomeCategoria, List<Scheda> schede) async {
-    showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator(color: Colors.redAccent)));
+  Future<void> _esportaCartellaInPDF(
+    String nomeCategoria,
+    List<Scheda> schede,
+  ) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (c) => const Center(
+        child: CircularProgressIndicator(color: Colors.redAccent),
+      ),
+    );
     try {
       final pdf = pw.Document();
       final purpleColor = PdfColor.fromHex('#9C27B0');
@@ -306,8 +462,17 @@ extension _WorkoutsScreenActions on _WorkoutsScreenState {
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: pw.CrossAxisAlignment.end,
                   children: [
-                    pw.Text(scheda.nome.toUpperCase(), style: pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold)),
-                    pw.Text(nomeCategoria, style: pw.TextStyle(fontSize: 12, color: greyText)),
+                    pw.Text(
+                      scheda.nome.toUpperCase(),
+                      style: pw.TextStyle(
+                        fontSize: 22,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                    ),
+                    pw.Text(
+                      nomeCategoria,
+                      style: pw.TextStyle(fontSize: 12, color: greyText),
+                    ),
                   ],
                 ),
               );
@@ -319,7 +484,11 @@ extension _WorkoutsScreenActions on _WorkoutsScreenState {
                     padding: const pw.EdgeInsets.only(bottom: 20, top: 4),
                     child: pw.Text(
                       'Livello: ${scheda.livello}',
-                      style: pw.TextStyle(fontSize: 12, fontStyle: pw.FontStyle.italic, color: greyText),
+                      style: pw.TextStyle(
+                        fontSize: 12,
+                        fontStyle: pw.FontStyle.italic,
+                        color: greyText,
+                      ),
                     ),
                   ),
                 );
@@ -329,13 +498,25 @@ extension _WorkoutsScreenActions on _WorkoutsScreenState {
 
               for (int i = 0; i < scheda.esercizi.length; i++) {
                 var es = scheda.esercizi[i];
-                int numAvvicinamento = es.serieAttive.where((s) => s.tipo == 'Avvicinamento').length;
-                int numWorking = es.serieAttive.where((s) => s.tipo != 'Avvicinamento').length;
+                int numAvvicinamento = es.serieAttive
+                    .where((s) => s.tipo == 'Avvicinamento')
+                    .length;
+                int numWorking = es.serieAttive
+                    .where((s) => s.tipo != 'Avvicinamento')
+                    .length;
                 if (numWorking == 0) numWorking = es.serieAttive.length;
 
-                bool isSuperSet = es.tecniche.any((t) => t.toLowerCase().contains('super'));
-                bool prevIsSuperSet = i > 0 && scheda.esercizi[i - 1].tecniche.any((t) => t.toLowerCase().contains('super'));
-                var altreTecniche = es.tecniche.where((t) => !t.toLowerCase().contains('super')).toList();
+                bool isSuperSet = es.tecniche.any(
+                  (t) => t.toLowerCase().contains('super'),
+                );
+                bool prevIsSuperSet =
+                    i > 0 &&
+                    scheda.esercizi[i - 1].tecniche.any(
+                      (t) => t.toLowerCase().contains('super'),
+                    );
+                var altreTecniche = es.tecniche
+                    .where((t) => !t.toLowerCase().contains('super'))
+                    .toList();
 
                 if (isSuperSet && !prevIsSuperSet) {
                   foglio.add(
@@ -343,7 +524,12 @@ extension _WorkoutsScreenActions on _WorkoutsScreenState {
                       padding: const pw.EdgeInsets.only(top: 8, bottom: 8),
                       child: pw.Text(
                         '>>> INIZIO SUPERSET',
-                        style: pw.TextStyle(color: purpleColor, fontSize: 12, fontWeight: pw.FontWeight.bold, letterSpacing: 1.2),
+                        style: pw.TextStyle(
+                          color: purpleColor,
+                          fontSize: 12,
+                          fontWeight: pw.FontWeight.bold,
+                          letterSpacing: 1.2,
+                        ),
                       ),
                     ),
                   );
@@ -351,28 +537,63 @@ extension _WorkoutsScreenActions on _WorkoutsScreenState {
 
                 foglio.add(
                   pw.Padding(
-                    padding: pw.EdgeInsets.only(left: isSuperSet ? 20 : 0, bottom: 16),
+                    padding: pw.EdgeInsets.only(
+                      left: isSuperSet ? 20 : 0,
+                      bottom: 16,
+                    ),
                     child: pw.Column(
                       crossAxisAlignment: pw.CrossAxisAlignment.start,
                       children: [
                         pw.Row(
                           crossAxisAlignment: pw.CrossAxisAlignment.end,
                           children: [
-                            pw.Text('- ${es.nome}', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
+                            pw.Text(
+                              '- ${es.nome}',
+                              style: pw.TextStyle(
+                                fontSize: 14,
+                                fontWeight: pw.FontWeight.bold,
+                              ),
+                            ),
                             pw.SizedBox(width: 10),
-                            pw.Text('$numWorking set  |  ${es.ripetizioni} reps  |  Rec: ${es.recupero}s', style: const pw.TextStyle(fontSize: 11)),
+                            pw.Text(
+                              '$numWorking set  |  ${es.ripetizioni} reps  |  Rec: ${es.recupero}s',
+                              style: const pw.TextStyle(fontSize: 11),
+                            ),
                           ],
                         ),
-                        if (numAvvicinamento > 0 || altreTecniche.isNotEmpty || (es.note != null && es.note!.isNotEmpty))
+                        if (numAvvicinamento > 0 ||
+                            altreTecniche.isNotEmpty ||
+                            (es.note != null && es.note!.isNotEmpty))
                           pw.Padding(
                             padding: const pw.EdgeInsets.only(left: 12, top: 4),
                             child: pw.Column(
                               crossAxisAlignment: pw.CrossAxisAlignment.start,
                               children: [
-                                if (numAvvicinamento > 0) pw.Text('Avvicinamento: $numAvvicinamento set', style: pw.TextStyle(fontSize: 10, color: greyText)),
-                                if (altreTecniche.isNotEmpty) pw.Text('Tecniche: ${altreTecniche.join(", ")}', style: pw.TextStyle(fontSize: 10, color: greyText)),
+                                if (numAvvicinamento > 0)
+                                  pw.Text(
+                                    'Avvicinamento: $numAvvicinamento set',
+                                    style: pw.TextStyle(
+                                      fontSize: 10,
+                                      color: greyText,
+                                    ),
+                                  ),
+                                if (altreTecniche.isNotEmpty)
+                                  pw.Text(
+                                    'Tecniche: ${altreTecniche.join(", ")}',
+                                    style: pw.TextStyle(
+                                      fontSize: 10,
+                                      color: greyText,
+                                    ),
+                                  ),
                                 if (es.note != null && es.note!.isNotEmpty)
-                                  pw.Text('Note: ${es.note}', style: pw.TextStyle(fontSize: 10, fontStyle: pw.FontStyle.italic, color: greyText)),
+                                  pw.Text(
+                                    'Note: ${es.note}',
+                                    style: pw.TextStyle(
+                                      fontSize: 10,
+                                      fontStyle: pw.FontStyle.italic,
+                                      color: greyText,
+                                    ),
+                                  ),
                               ],
                             ),
                           ),
@@ -384,7 +605,13 @@ extension _WorkoutsScreenActions on _WorkoutsScreenState {
                             runSpacing: 8,
                             children: List.generate(
                               numWorking,
-                              (idx) => pw.Text('Set ${idx + 1}:  ____ kg  x  ____', style: const pw.TextStyle(fontSize: 11, color: PdfColors.black)),
+                              (idx) => pw.Text(
+                                'Set ${idx + 1}:  ____ kg  x  ____',
+                                style: const pw.TextStyle(
+                                  fontSize: 11,
+                                  color: PdfColors.black,
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -414,7 +641,12 @@ extension _WorkoutsScreenActions on _WorkoutsScreenState {
     } catch (e) {
       if (!mounted) return;
       Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Errore creazione PDF: $e'), backgroundColor: Colors.red));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Errore creazione PDF: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 }
