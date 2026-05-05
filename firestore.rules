@@ -31,6 +31,10 @@ service cloud.firestore {
       allow delete: if isSelf(userId);
     }
 
+    match /users/{userId}/data/{docId} {
+      allow read, write: if isSelf(userId);
+    }
+
     match /storico_atleti/{docId} {
       allow create: if isSignedIn() && request.resource.data.atletaId == request.auth.uid;
       allow read, update, delete: if isSignedIn() && (

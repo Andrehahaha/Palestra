@@ -180,7 +180,8 @@ class _PRModeScreenState extends State<PRModeScreen> {
     bool changed = false;
 
     for (final scheda in schede) {
-      for (final es in scheda.esercizi) {
+      for (final esLista in scheda.eserciziPerSettimana.values) {
+        for (final es in esLista) {
         if (es.modalitaIntensita != 'percentuale') continue;
         if (_big3Key(es.nome) != targetKey) continue;
 
@@ -241,6 +242,7 @@ class _PRModeScreenState extends State<PRModeScreen> {
               changed = true;
             }
           }
+        }
         }
       }
     }

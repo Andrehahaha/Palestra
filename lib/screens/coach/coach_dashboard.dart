@@ -22,11 +22,12 @@ class _CoachDashboardScreenState extends State<CoachDashboardScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFF0A0A0A),
       appBar: AppBar(
-        title: const Text('Pagina Allenatore', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text('Allenatore'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.logout, color: Colors.redAccent),
+            icon: const Icon(Icons.logout, color: Color(0xFF666666)),
             onPressed: _logout,
             tooltip: 'Esci',
           )
@@ -36,23 +37,21 @@ class _CoachDashboardScreenState extends State<CoachDashboardScreen> {
         padding: const EdgeInsets.all(20.0),
         child: Column(
           children: [
-            // CARDA LIBRERIA
             _buildMenuCard(
               title: "Libreria Schede",
               subtitle: "Crea e gestisci i tuoi template master",
-              icon: Icons.library_books,
-              color: Colors.blueAccent,
+              icon: Icons.library_books_rounded,
+              gradientColors: const [Color(0xFF1565C0), Color(0xFF4A90D9)],
               onTap: () {
-                Navigator.push(context, MaterialPageRoute(builder: (c) => const LibreriaSchedeScreen())); 
+                Navigator.push(context, MaterialPageRoute(builder: (c) => const LibreriaSchedeScreen()));
               },
             ),
-            const SizedBox(height: 20),
-            // CARDA ATLETI
+            const SizedBox(height: 16),
             _buildMenuCard(
               title: "I miei Atleti",
               subtitle: "Gestisci allievi, vedi log e invia schede",
-              icon: Icons.people_alt,
-              color: Colors.deepOrange,
+              icon: Icons.people_alt_rounded,
+              gradientColors: const [Color(0xFFCC1A1A), Color(0xFFFF6B1A)],
               onTap: () {
                 Navigator.push(context, MaterialPageRoute(builder: (context) => const ListaAtletiScreen()));
               },
@@ -63,37 +62,62 @@ class _CoachDashboardScreenState extends State<CoachDashboardScreen> {
     );
   }
 
-  Widget _buildMenuCard({required String title, required String subtitle, required IconData icon, required Color color, required VoidCallback onTap}) {
+  Widget _buildMenuCard({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required List<Color> gradientColors,
+    required VoidCallback onTap,
+  }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Card(
-        elevation: 4,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          width: double.infinity,
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(color: color.withValues(alpha: 0.2), shape: BoxShape.circle),
-                child: Icon(icon, size: 40, color: color),
-              ),
-              const SizedBox(width: 20),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 4),
-                    Text(subtitle, style: const TextStyle(color: Colors.grey, fontSize: 14)),
-                  ],
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.all(22),
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: const Color(0xFF141414),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+          boxShadow: [
+            BoxShadow(
+              color: gradientColors.last.withValues(alpha: 0.12),
+              blurRadius: 16,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: LinearGradient(
+                  colors: gradientColors,
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                 ),
               ),
-              const Icon(Icons.arrow_forward_ios, color: Colors.grey),
-            ],
-          ),
+              child: Icon(icon, size: 28, color: Colors.white),
+            ),
+            const SizedBox(width: 18),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Colors.white),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(subtitle, style: const TextStyle(color: Color(0xFF888888), fontSize: 13)),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: Colors.white.withValues(alpha: 0.3)),
+          ],
         ),
       ),
     );
@@ -199,15 +223,13 @@ class _ListaAtletiScreenState extends State<ListaAtletiScreen> {
 
           final atleti = snapshot.data!.docs;
           return ListView.builder(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             itemCount: atleti.length,
             itemBuilder: (context, index) {
               var atleta = atleti[index].data() as Map<String, dynamic>;
-              return Card(
-                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: ListTile(
-                  leading: const CircleAvatar(backgroundColor: Colors.deepOrange, child: Icon(Icons.person, color: Colors.white)),
-                  title: Text(atleta['email'] ?? 'Senza email', style: const TextStyle(fontWeight: FontWeight.bold)),
-                  trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: InkWell(
                   onTap: () {
                     Navigator.push(context, MaterialPageRoute(
                       builder: (context) => HubAtletaScreen(
@@ -216,6 +238,40 @@ class _ListaAtletiScreenState extends State<ListaAtletiScreen> {
                       ),
                     ));
                   },
+                  borderRadius: BorderRadius.circular(16),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF141414),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: LinearGradient(
+                              colors: [Color(0xFFCC1A1A), Color(0xFFFF6B1A)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                          ),
+                          child: const Icon(Icons.person, color: Colors.white, size: 22),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Text(
+                            atleta['email'] ?? 'Senza email',
+                            style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.white),
+                          ),
+                        ),
+                        Icon(Icons.chevron_right, color: Colors.white.withValues(alpha: 0.3), size: 20),
+                      ],
+                    ),
+                  ),
                 ),
               );
             },
@@ -235,43 +291,78 @@ class HubAtletaScreen extends StatelessWidget {
 
   const HubAtletaScreen({super.key, required this.atletaId, required this.atletaEmail});
 
+  Widget _hubTile({
+    required IconData icon,
+    required Color accentColor,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: const Color(0xFF141414),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: accentColor.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: accentColor, size: 26),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
+                  const SizedBox(height: 3),
+                  Text(subtitle, style: const TextStyle(color: Color(0xFF888888), fontSize: 13)),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: Colors.white.withValues(alpha: 0.3)),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(atletaEmail, style: const TextStyle(fontSize: 18))),
+      backgroundColor: const Color(0xFF0A0A0A),
+      appBar: AppBar(title: Text(atletaEmail, style: const TextStyle(fontSize: 17))),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-            Card(
-              child: ListTile(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                leading: const Icon(Icons.history_outlined, color: Colors.greenAccent, size: 36),
-                title: const Text("Log Allenamenti", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                subtitle: const Text("Vedi lo storico e i carichi sollevati"),
-                trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                onTap: () {
-                  Navigator.push(context, MaterialPageRoute(builder: (c) => LogAtletaSpecificoScreen(atletaId: atletaId, atletaEmail: atletaEmail)));
-                },
-              ),
+            _hubTile(
+              icon: Icons.history_outlined,
+              accentColor: const Color(0xFF4CAF50),
+              title: 'Log Allenamenti',
+              subtitle: 'Vedi lo storico e i carichi sollevati',
+              onTap: () => Navigator.push(context, MaterialPageRoute(
+                builder: (c) => LogAtletaSpecificoScreen(atletaId: atletaId, atletaEmail: atletaEmail),
+              )),
             ),
             const SizedBox(height: 12),
-            Card(
-              child: ListTile(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                leading: const Icon(Icons.send_rounded, color: Colors.deepOrange, size: 36),
-                title: const Text("Invia Nuova Scheda", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                subtitle: const Text("Assegna un allenamento dalla libreria"),
-                trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                onTap: () {
-                    Navigator.push(context, MaterialPageRoute(
-                      builder: (c) => InviaSchedaScreen(
-                        atletaId: atletaId, 
-                        atletaEmail: atletaEmail
-                      )
-                    ));
-                  },
-              ),
+            _hubTile(
+              icon: Icons.send_rounded,
+              accentColor: const Color(0xFFFF6B1A),
+              title: 'Invia Nuova Scheda',
+              subtitle: 'Assegna un allenamento dalla libreria',
+              onTap: () => Navigator.push(context, MaterialPageRoute(
+                builder: (c) => InviaSchedaScreen(atletaId: atletaId, atletaEmail: atletaEmail),
+              )),
             ),
           ],
         ),

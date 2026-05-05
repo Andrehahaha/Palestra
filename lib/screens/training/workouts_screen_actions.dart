@@ -61,12 +61,12 @@ extension _WorkoutsScreenActions on _WorkoutsScreenState {
     final bool? conferma = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Conferma eliminazione cloud'),
-        content: Text('Vuoi eliminare $target anche sul cloud?'),
+        title: const Text('Elimina scheda'),
+        content: Text('Sei sicuro di voler eliminare $target? Questa azione è irreversibile.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('No'),
+            child: const Text('Annulla'),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -127,9 +127,9 @@ extension _WorkoutsScreenActions on _WorkoutsScreenState {
     );
     if (!conferma || !mounted) return;
 
-    final nomiDaEliminareCloud = mieSchede
+    final idDaEliminareCloud = mieSchede
         .where((s) => s.categoria == nomeCategoria)
-        .map((s) => s.nome)
+        .map((s) => s.id)
         .toSet()
         .toList();
 
@@ -140,8 +140,8 @@ extension _WorkoutsScreenActions on _WorkoutsScreenState {
 
     await _salvaDati();
 
-    for (final nomeScheda in nomiDaEliminareCloud) {
-      await _eliminaSchedaDalCloud(nomeScheda);
+    for (final schedaId in idDaEliminareCloud) {
+      await _eliminaSchedaDalCloud(schedaId);
     }
 
     if (!mounted) return;

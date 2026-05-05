@@ -78,6 +78,50 @@ extension _WorkoutsScreenSections on _WorkoutsScreenState {
     );
   }
 
+  void _mostraDebugImport(BuildContext context, Map<String, dynamic> debug) {
+    final encoder = const JsonEncoder.withIndent('  ');
+    final text = encoder.convert(debug);
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        title: const Text('Debug Import AI', style: TextStyle(color: Colors.white)),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 400,
+          child: Scrollbar(
+            child: SingleChildScrollView(
+              child: SelectableText(
+                text,
+                style: const TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 11,
+                  color: Colors.greenAccent,
+                ),
+              ),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: text));
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('JSON copiato negli appunti')),
+              );
+            },
+            child: const Text('Copia', style: TextStyle(color: Colors.deepOrange)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Chiudi', style: TextStyle(color: Colors.grey)),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _importaConAI(BuildContext context) async {
     final source = await showModalBottomSheet<_AiImportSource>(
       context: context,
@@ -117,69 +161,79 @@ extension _WorkoutsScreenSections on _WorkoutsScreenState {
     if (source == null || !context.mounted || !mounted) return;
 
     List<Scheda>? schedeImportate;
+    var dialogShown = false;
 
-    if (source == _AiImportSource.photo) {
-      final picker = ImagePicker();
-      final XFile? foto = await picker.pickImage(source: ImageSource.gallery);
-      if (foto == null || !context.mounted || !mounted) return;
+    try {
+      if (source == _AiImportSource.photo) {
+        final picker = ImagePicker();
+        final XFile? foto = await picker.pickImage(source: ImageSource.gallery);
+        if (foto == null || !context.mounted || !mounted) return;
 
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => const Center(
-          child: CircularProgressIndicator(color: Colors.deepOrange),
-        ),
-      );
-
-      schedeImportate = await AiService.analizzaFotoScheda(foto);
-    } else {
-      final picked = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: const ['pdf'],
-        withData: true,
-      );
-      if (picked == null ||
-          picked.files.isEmpty ||
-          !context.mounted ||
-          !mounted) {
-        return;
-      }
-
-      final selectedFile = picked.files.single;
-      var pdfBytes = selectedFile.bytes;
-      if ((pdfBytes == null || pdfBytes.isEmpty) && selectedFile.path != null) {
-        try {
-          pdfBytes = await File(selectedFile.path!).readAsBytes();
-        } catch (_) {
-          pdfBytes = null;
-        }
-      }
-
-      if (pdfBytes == null || pdfBytes.isEmpty) {
-        if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Impossibile leggere il PDF selezionato.'),
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => const Center(
+            child: CircularProgressIndicator(color: Colors.deepOrange),
           ),
         );
-        return;
+        dialogShown = true;
+
+        schedeImportate = await AiService.analizzaFotoScheda(foto);
+      } else {
+        final picked = await FilePicker.platform.pickFiles(
+          type: FileType.custom,
+          allowedExtensions: const ['pdf'],
+          withData: true,
+        );
+        if (picked == null ||
+            picked.files.isEmpty ||
+            !context.mounted ||
+            !mounted) {
+          return;
+        }
+
+        final selectedFile = picked.files.single;
+        var pdfBytes = selectedFile.bytes;
+        if ((pdfBytes == null || pdfBytes.isEmpty) &&
+            selectedFile.path != null) {
+          try {
+            pdfBytes = await File(selectedFile.path!).readAsBytes();
+          } catch (_) {
+            pdfBytes = null;
+          }
+        }
+
+        if (pdfBytes == null || pdfBytes.isEmpty) {
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Impossibile leggere il PDF selezionato.'),
+            ),
+          );
+          return;
+        }
+
+        if (!context.mounted || !mounted) return;
+
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => const Center(
+            child: CircularProgressIndicator(color: Colors.deepOrange),
+          ),
+        );
+        dialogShown = true;
+
+        schedeImportate = await AiService.analizzaPdfSchedaBytes(pdfBytes);
       }
-
-      if (!context.mounted || !mounted) return;
-
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => const Center(
-          child: CircularProgressIndicator(color: Colors.deepOrange),
-        ),
-      );
-
-      schedeImportate = await AiService.analizzaPdfSchedaBytes(pdfBytes);
+    } finally {
+      if (dialogShown && context.mounted) {
+        Navigator.pop(context);
+        dialogShown = false;
+      }
     }
 
     if (!context.mounted || !mounted) return;
-    Navigator.pop(context);
 
     if (schedeImportate != null && schedeImportate.isNotEmpty) {
       final resolved = AiService.collapseImportedSchedeForWeeklyProgression(
@@ -190,6 +244,18 @@ extension _WorkoutsScreenSections on _WorkoutsScreenState {
       }
 
       _updateState(() {
+        // Replace any existing scheda with the same name+category so that
+        // re-importing the same PDF doesn't leave old 1-week duplicates alongside
+        // the new multi-week versions.
+        for (final nuova in resolved.schedeVisibili) {
+          mieSchede.removeWhere(
+            (s) =>
+                s.nome.trim().toLowerCase() ==
+                    nuova.nome.trim().toLowerCase() &&
+                s.categoria.trim().toLowerCase() ==
+                    nuova.categoria.trim().toLowerCase(),
+          );
+        }
         mieSchede.addAll(resolved.schedeVisibili);
       });
       await _salvaDati();
@@ -201,6 +267,7 @@ extension _WorkoutsScreenSections on _WorkoutsScreenState {
         (total, weeks) => total + weeks.length,
       );
 
+      final debugJson = AiService.consumeLastDebugJson();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -208,26 +275,45 @@ extension _WorkoutsScreenSections on _WorkoutsScreenState {
                 ? '${resolved.schedeVisibili.length} schede/sedute importate da $sourceLabel. Progressione settimanale pronta ($progressionWeeks settimane successive).'
                 : '${resolved.schedeVisibili.length} schede importate da $sourceLabel!',
           ),
+          action: debugJson != null
+              ? SnackBarAction(
+                  label: 'Debug',
+                  onPressed: () => _mostraDebugImport(context, debugJson),
+                )
+              : null,
+          duration: const Duration(seconds: 8),
         ),
       );
     } else {
+      final debugJson = AiService.consumeLastDebugJson();
       final msg =
           AiService.consumeLastError() ??
           'Errore durante l\'import. Riprova! ❌';
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(msg),
+          action: debugJson != null
+              ? SnackBarAction(
+                  label: 'Debug',
+                  onPressed: () => _mostraDebugImport(context, debugJson),
+                )
+              : null,
+          duration: const Duration(seconds: 8),
+        ),
+      );
     }
   }
 
   List<Widget> _buildAppBarActions(BuildContext context) {
     return [
       IconButton(
-        icon: const Icon(Icons.sync, color: Colors.greenAccent),
+        icon: const Icon(Icons.sync, color: Color(0xFF4CAF50)),
         onPressed: () async {
           showDialog(
             context: context,
             barrierDismissible: false,
             builder: (c) => const Center(
-              child: CircularProgressIndicator(color: Colors.greenAccent),
+              child: CircularProgressIndicator(color: Color(0xFF4CAF50)),
             ),
           );
           await _sincronizzaColCoach(silenzioso: false);
@@ -236,7 +322,7 @@ extension _WorkoutsScreenSections on _WorkoutsScreenState {
         },
       ),
       IconButton(
-        icon: const Icon(Icons.document_scanner, color: Colors.blueAccent),
+        icon: const Icon(Icons.document_scanner, color: Color(0xFF888888)),
         onPressed: () => _importaConAI(context),
       ),
       IconButton(
@@ -376,10 +462,10 @@ extension _WorkoutsScreenSections on _WorkoutsScreenState {
                 leading: Icon(
                   nomeCategoria == 'Dal Coach 🐯'
                       ? Icons.local_fire_department
-                      : Icons.folder,
+                      : Icons.folder_rounded,
                   color: nomeCategoria == 'Dal Coach 🐯'
-                      ? Colors.greenAccent
-                      : Colors.deepOrange,
+                      ? const Color(0xFF4CAF50)
+                      : const Color(0xFFFF6B1A),
                 ),
                 title: Row(
                   children: [
@@ -390,8 +476,8 @@ extension _WorkoutsScreenSections on _WorkoutsScreenState {
                           fontWeight: FontWeight.bold,
                           fontSize: 18,
                           color: nomeCategoria == 'Dal Coach 🐯'
-                              ? Colors.greenAccent
-                              : Colors.deepOrange,
+                              ? const Color(0xFF4CAF50)
+                              : const Color(0xFFFF6B1A),
                         ),
                       ),
                     ),
@@ -549,78 +635,184 @@ extension _WorkoutsScreenSections on _WorkoutsScreenState {
     );
   }
 
+  Future<void> _apriGerarchiaScheda(Scheda scheda) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _SchedaAllenamentiPage(
+          scheda: scheda,
+          allenamenti: _buildAllenamentiGerarchia(scheda),
+          onOpenWorkout: (week) => _apriDettaglioScheda(scheda, targetWeek: week),
+        ),
+      ),
+    );
+    _updateState(() {});
+  }
+
+  Future<void> _apriDettaglioScheda(Scheda scheda, {int? targetWeek}) async {
+    if (targetWeek != null) {
+      scheda.settimanaCorrente = targetWeek;
+    }
+    if (kDebugMode) {
+      debugPrint('[OPEN] "${scheda.nome}" id=${scheda.id} settimana=${scheda.settimanaCorrente} eperSett.keys=${scheda.eserciziPerSettimana.keys.toList()..sort()}');
+    }
+    final completato = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) =>
+            DettaglioSchedaScreen(scheda: scheda, storico: storico),
+      ),
+    );
+    if (completato == true) {
+      final copiaScheda = Scheda.fromJson(scheda.toJson());
+      final nuovoAllenamento = Allenamento(
+        data: DateTime.now(),
+        scheda: copiaScheda,
+      );
+      storico.add(nuovoAllenamento);
+      await _inviaAllenamentoAlCloud(nuovoAllenamento);
+      for (var es in scheda.esercizi) {
+        for (var s in es.serieAttive) {
+          s.isCompletata = false;
+        }
+      }
+    }
+    _updateState(() {});
+    _salvaDati();
+  }
+
+  Color _schedaAccentColor(Scheda scheda) {
+    const palette = [
+      Color(0xFFEF6C00),
+      Color(0xFF00897B),
+      Color(0xFF1565C0),
+      Color(0xFFC62828),
+      Color(0xFF6A1B9A),
+      Color(0xFF2E7D32),
+    ];
+    final seed = scheda.nome.hashCode ^ scheda.categoria.hashCode;
+    return palette[seed.abs() % palette.length];
+  }
+
   Widget _buildSchedaCard(BuildContext context, Scheda scheda) {
-    final indiceReale = mieSchede.indexOf(scheda);
+    final accent = _schedaAccentColor(scheda);
+
+    Widget actionBlock({
+      required IconData icon,
+      required String label,
+      required Color color,
+      required VoidCallback onTap,
+    }) {
+      return Material(
+        color: color.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 16, color: color),
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     final cardScheda = Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      child: ListTile(
-        leading: const CircleAvatar(child: Icon(Icons.list_alt)),
-        title: Text(
-          scheda.nome,
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        subtitle: Text(
-          '${scheda.esercizi.length} esercizi • ${scheda.livello} • W${scheda.settimanaCorrente}\n'
-          '${scheda.continuativa ? 'Continuativa' : 'Non continuativa'} • (Tieni premuto per spostare)',
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton(
-              icon: const Icon(
-                Icons.skip_next,
-                size: 20,
-                color: Colors.greenAccent,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => _apriGerarchiaScheda(scheda),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                accent.withValues(alpha: 0.30),
+                accent.withValues(alpha: 0.12),
+              ],
+            ),
+            border: Border.all(color: accent.withValues(alpha: 0.55), width: 1),
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      scheda.nome,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 18,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    Icons.chevron_right,
+                    color: accent.withValues(alpha: 0.95),
+                  ),
+                ],
               ),
-              tooltip: 'Settimana successiva',
-              onPressed: () => _apriSettimanaSuccessiva(scheda),
-            ),
-            IconButton(
-              icon: const Icon(
-                Icons.edit,
-                size: 20,
-                color: Colors.orangeAccent,
+              const SizedBox(height: 6),
+              Text(
+                '${scheda.esercizi.length} esercizi • ${scheda.livello} • W${scheda.settimanaCorrente}',
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.9)),
               ),
-              tooltip: 'Rinomina scheda',
-              onPressed: () => _rinominaScheda(scheda),
-            ),
-            IconButton(
-              icon: const Icon(
-                Icons.copy,
-                size: 20,
-                color: Colors.lightBlueAccent,
+              Text(
+                scheda.continuativa ? 'Continuativa' : 'Non continuativa',
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.75)),
               ),
-              tooltip: 'Duplica questa scheda',
-              onPressed: () => _duplicaScheda(scheda),
-            ),
-            const Icon(Icons.arrow_forward_ios, size: 16),
-          ],
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  actionBlock(
+                    icon: Icons.skip_next,
+                    label: 'Settimana',
+                    color: Colors.greenAccent,
+                    onTap: () => _apriSettimanaSuccessiva(scheda),
+                  ),
+                  actionBlock(
+                    icon: Icons.edit,
+                    label: 'Rinomina',
+                    color: Colors.orangeAccent,
+                    onTap: () => _rinominaScheda(scheda),
+                  ),
+                  actionBlock(
+                    icon: Icons.copy,
+                    label: 'Duplica',
+                    color: Colors.lightBlueAccent,
+                    onTap: () => _duplicaScheda(scheda),
+                  ),
+                  actionBlock(
+                    icon: Icons.play_arrow_rounded,
+                    label: 'Avvia',
+                    color: Colors.deepOrangeAccent,
+                    onTap: () => _apriDettaglioScheda(scheda),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
-        onTap: () async {
-          final completato = await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) =>
-                  DettaglioSchedaScreen(scheda: scheda, storico: storico),
-            ),
-          );
-          if (completato == true) {
-            final copiaScheda = Scheda.fromJson(scheda.toJson());
-            final nuovoAllenamento = Allenamento(
-              data: DateTime.now(),
-              scheda: copiaScheda,
-            );
-            storico.add(nuovoAllenamento);
-            _inviaAllenamentoAlCloud(nuovoAllenamento);
-            for (var es in scheda.esercizi) {
-              for (var s in es.serieAttive) {
-                s.isCompletata = false;
-              }
-            }
-          }
-          _updateState(() {});
-          _salvaDati();
-        },
       ),
     );
 
@@ -649,12 +841,12 @@ extension _WorkoutsScreenSections on _WorkoutsScreenState {
           return _confermaEliminazioneCloud('la scheda "${scheda.nome}"');
         },
         onDismissed: (direction) {
-          String nomeDaEliminare = mieSchede[indiceReale].nome;
+          final String idDaEliminare = scheda.id;
           _updateState(() {
-            mieSchede.removeAt(indiceReale);
+            mieSchede.remove(scheda);
           });
           _salvaDati();
-          _eliminaSchedaDalCloud(nomeDaEliminare);
+          _eliminaSchedaDalCloud(idDaEliminare);
         },
         child: cardScheda,
       ),

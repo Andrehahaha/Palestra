@@ -317,7 +317,7 @@ class _DoloreScreenState extends State<DoloreScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(titolo, style: const TextStyle(fontWeight: FontWeight.w600)),
+        Text(titolo, style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.white)),
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
@@ -328,12 +328,15 @@ class _DoloreScreenState extends State<DoloreScreen> {
               label: Text(opzione),
               selected: isSelected,
               onSelected: (_) => onSelect(opzione),
-              selectedColor: Colors.deepOrange,
+              selectedColor: const Color(0xFFFF6B1A),
               labelStyle: TextStyle(
-                color: isSelected ? Colors.white : Colors.grey.shade300,
-                fontWeight: FontWeight.bold,
+                color: isSelected ? Colors.white : const Color(0xFFAAAAAA),
+                fontWeight: FontWeight.w600,
               ),
               backgroundColor: const Color(0xFF1E1E1E),
+              side: BorderSide(
+                color: isSelected ? const Color(0xFFFF6B1A) : Colors.white.withValues(alpha: 0.1),
+              ),
             );
           }).toList(),
         ),
@@ -356,6 +359,7 @@ class _DoloreScreenState extends State<DoloreScreen> {
     ];
 
     return Scaffold(
+      backgroundColor: const Color(0xFF0A0A0A),
       appBar: AppBar(title: const Text('Dolori & Recupero')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
@@ -365,24 +369,32 @@ class _DoloreScreenState extends State<DoloreScreen> {
             Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: Colors.amber.withValues(alpha: 0.15),
+                color: const Color(0xFF2A2000),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.amber.withValues(alpha: 0.45)),
+                border: Border.all(color: Colors.amber.withValues(alpha: 0.4)),
               ),
-              child: const Text(
-                'Suggerimenti generali: se il dolore è forte, dura a lungo o peggiora, sospendi i carichi e senti un professionista sanitario.',
-                style: TextStyle(color: Colors.amber, fontWeight: FontWeight.w600),
+              child: const Row(
+                children: [
+                  Icon(Icons.warning_amber_rounded, color: Colors.amber, size: 18),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Se il dolore è forte, dura a lungo o peggiora, sospendi i carichi e consulta un professionista.',
+                      style: TextStyle(color: Colors.amber, fontWeight: FontWeight.w600, fontSize: 13),
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 20),
             const Text(
               'Dove senti dolore?',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
             ),
             const SizedBox(height: 4),
             const Text(
               'Zona condivisa con PR e Schede',
-              style: TextStyle(color: Colors.lightBlueAccent, fontSize: 12, fontWeight: FontWeight.w600),
+              style: TextStyle(color: Color(0xFF6BB5E8), fontSize: 12, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 10),
             Wrap(
@@ -397,19 +409,22 @@ class _DoloreScreenState extends State<DoloreScreen> {
                     setState(() => _zonaSelezionata = zona);
                     _salvaZonaSelezionata(zona);
                   },
-                  selectedColor: Colors.deepOrange,
+                  selectedColor: const Color(0xFFFF6B1A),
                   labelStyle: TextStyle(
-                    color: isSelected ? Colors.white : Colors.grey.shade300,
-                    fontWeight: FontWeight.bold,
+                    color: isSelected ? Colors.white : const Color(0xFFAAAAAA),
+                    fontWeight: FontWeight.w600,
                   ),
                   backgroundColor: const Color(0xFF1E1E1E),
+                  side: BorderSide(
+                    color: isSelected ? const Color(0xFFFF6B1A) : Colors.white.withValues(alpha: 0.1),
+                  ),
                 );
               }).toList(),
             ),
             const SizedBox(height: 18),
             const Text(
               'Che tipo di dolore senti?',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
             ),
             const SizedBox(height: 10),
             Wrap(
@@ -420,17 +435,19 @@ class _DoloreScreenState extends State<DoloreScreen> {
                   label: const Text('Selezione manuale'),
                   selected: !_usaMiniTest,
                   onSelected: (_) => setState(() => _usaMiniTest = false),
-                  selectedColor: Colors.deepOrange,
+                  selectedColor: const Color(0xFFFF6B1A),
                   backgroundColor: const Color(0xFF1E1E1E),
-                  labelStyle: TextStyle(color: !_usaMiniTest ? Colors.white : Colors.grey.shade300, fontWeight: FontWeight.bold),
+                  side: BorderSide(color: !_usaMiniTest ? const Color(0xFFFF6B1A) : Colors.white.withValues(alpha: 0.1)),
+                  labelStyle: TextStyle(color: !_usaMiniTest ? Colors.white : const Color(0xFFAAAAAA), fontWeight: FontWeight.w600),
                 ),
                 ChoiceChip(
                   label: const Text('Mini test guidato'),
                   selected: _usaMiniTest,
                   onSelected: (_) => setState(() => _usaMiniTest = true),
-                  selectedColor: Colors.deepOrange,
+                  selectedColor: const Color(0xFFFF6B1A),
                   backgroundColor: const Color(0xFF1E1E1E),
-                  labelStyle: TextStyle(color: _usaMiniTest ? Colors.white : Colors.grey.shade300, fontWeight: FontWeight.bold),
+                  side: BorderSide(color: _usaMiniTest ? const Color(0xFFFF6B1A) : Colors.white.withValues(alpha: 0.1)),
+                  labelStyle: TextStyle(color: _usaMiniTest ? Colors.white : const Color(0xFFAAAAAA), fontWeight: FontWeight.w600),
                 ),
               ],
             ),
@@ -448,19 +465,27 @@ class _DoloreScreenState extends State<DoloreScreen> {
                     setState(() => _tipoDoloreSelezionato = tipo);
                     _salvaTipoDoloreSelezionato(tipo);
                   },
-                  selectedColor: Colors.deepOrange,
+                  selectedColor: const Color(0xFFFF6B1A),
                   labelStyle: TextStyle(
-                    color: isSelected ? Colors.white : Colors.grey.shade300,
-                    fontWeight: FontWeight.bold,
+                    color: isSelected ? Colors.white : const Color(0xFFAAAAAA),
+                    fontWeight: FontWeight.w600,
                   ),
                   backgroundColor: const Color(0xFF1E1E1E),
+                  side: BorderSide(
+                    color: isSelected ? const Color(0xFFFF6B1A) : Colors.white.withValues(alpha: 0.1),
+                  ),
                 );
               }).toList(),
             )
             else
-              Card(
+              Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF141414),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                ),
                 child: Padding(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -513,9 +538,9 @@ class _DoloreScreenState extends State<DoloreScreen> {
                           width: double.infinity,
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
-                            color: Colors.deepOrange.withValues(alpha: 0.12),
+                            color: const Color(0xFFFF6B1A).withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: Colors.deepOrange.withValues(alpha: 0.4)),
+                            border: Border.all(color: const Color(0xFFFF6B1A).withValues(alpha: 0.4)),
                           ),
                           child: Text(
                             'Risultato test: $_tipoSuggeritoTest • Confidenza ${_confidenzaTest!}% (${_etichettaConfidenza(_confidenzaTest!)})',
@@ -529,35 +554,55 @@ class _DoloreScreenState extends State<DoloreScreen> {
               ),
             const SizedBox(height: 14),
             Container(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.04),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.white24),
+                color: const Color(0xFF141414),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     profilo['categoria'] as String,
-                    style: const TextStyle(fontSize: 13, color: Colors.grey),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Livello attenzione: $livello',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: livello == 'Basso'
-                          ? Colors.greenAccent
-                          : livello == 'Medio'
-                              ? Colors.orangeAccent
-                              : livello == 'Alto'
-                                  ? Colors.deepOrangeAccent
-                                  : Colors.redAccent,
-                    ),
+                    style: const TextStyle(fontSize: 12, color: Color(0xFF888888), letterSpacing: 0.3),
                   ),
                   const SizedBox(height: 6),
-                  Text(profilo['descrizione'] as String),
+                  Row(
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: livello == 'Basso'
+                              ? const Color(0xFF4CAF50)
+                              : livello == 'Medio'
+                                  ? const Color(0xFFFFB347)
+                                  : livello == 'Alto'
+                                      ? const Color(0xFFFF6B1A)
+                                      : const Color(0xFFCC1A1A),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Livello attenzione: $livello',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                          color: livello == 'Basso'
+                              ? const Color(0xFF4CAF50)
+                              : livello == 'Medio'
+                                  ? const Color(0xFFFFB347)
+                                  : livello == 'Alto'
+                                      ? const Color(0xFFFF6B1A)
+                                      : const Color(0xFFCC1A1A),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(profilo['descrizione'] as String, style: const TextStyle(color: Color(0xFFCCCCCC))),
                 ],
               ),
             ),
@@ -589,14 +634,26 @@ class _DoloreScreenState extends State<DoloreScreen> {
     required List<String> righe,
     bool initiallyExpanded = false,
   }) {
-    return Card(
+    return Container(
       margin: const EdgeInsets.symmetric(vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFF141414),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
       child: ExpansionTile(
         initiallyExpanded: initiallyExpanded,
-        leading: Icon(icon, color: color),
+        leading: Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.14),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, color: color, size: 20),
+        ),
         title: Text(
           titolo,
-          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white),
         ),
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         expandedCrossAxisAlignment: CrossAxisAlignment.start,
@@ -606,8 +663,8 @@ class _DoloreScreenState extends State<DoloreScreen> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('• ', style: TextStyle(fontWeight: FontWeight.bold)),
-                Expanded(child: Text(riga)),
+                Text('• ', style: TextStyle(fontWeight: FontWeight.bold, color: color)),
+                Expanded(child: Text(riga, style: const TextStyle(color: Color(0xFFDDDDDD)))),
               ],
             ),
           ),

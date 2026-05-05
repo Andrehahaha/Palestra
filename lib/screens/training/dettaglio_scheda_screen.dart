@@ -19,9 +19,7 @@ import '../../services/dizionario_esercizi.dart';
 import '../../services/athlete_progress_service.dart';
 import '../../services/workload_calculator.dart';
 
-// ============================================================================
-// SCHERMATA DETTAGLIO ALLENAMENTO (CORE DELL'APP)
-// ============================================================================
+
 class DettaglioSchedaScreen extends StatefulWidget {
   final Scheda scheda; 
   final List<Allenamento> storico; 
@@ -124,8 +122,17 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
   }
 
   bool _applySnapshotForWeek(int week) {
-    final raw = _weekSnapshots[week];
-    if (raw == null) return false;
+    var raw = _weekSnapshots[week];
+
+    // Fallback: use embedded per-week data from the Scheda model itself.
+    if (raw == null) {
+      final embeddedEsercizi = widget.scheda.eserciziPerSettimana[week];
+      if (embeddedEsercizi == null) return false;
+      final weekJson = Map<String, dynamic>.from(widget.scheda.toJson());
+      weekJson['settimanaCorrente'] = week;
+      weekJson['esercizi'] = embeddedEsercizi.map((e) => e.toJson()).toList();
+      raw = weekJson;
+    }
 
     final snapshot = Scheda.fromJson(Map<String, dynamic>.from(raw));
     // Defensive fix: if stored snapshot has mismatched week metadata,
@@ -222,6 +229,25 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
         }
       }
 
+      // Populate _weekSnapshots from embedded eserciziPerSettimana for any
+      // weeks not already covered by the history store. This ensures all weeks
+      // are visible as chips even if the history store is empty or partial.
+      final baseJson = <String, dynamic>{
+        'id': widget.scheda.id,
+        'nome': widget.scheda.nome,
+        'livello': widget.scheda.livello,
+        'categoria': widget.scheda.categoria,
+        'continuativa': widget.scheda.continuativa,
+      };
+      for (final entry in widget.scheda.eserciziPerSettimana.entries) {
+        if (_weekSnapshots.containsKey(entry.key)) continue;
+        _weekSnapshots[entry.key] = {
+          ...baseJson,
+          'settimanaCorrente': entry.key,
+          'esercizi': entry.value.map((e) => e.toJson()).toList(),
+        };
+      }
+
       String? bozzaJson = prefs.getString(_bozzaKey);
       final usingLegacyBozzaKey = bozzaJson == null;
       bozzaJson ??= prefs.getString(_legacyBozzaKeyByName);
@@ -233,15 +259,11 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
 
       if (bozzaJson == null || !mounted) {
         if (kDebugMode) {
-          debugPrint('[WEEK] nessuna bozza trovata per key=$_bozzaKey');
+          debugPrint('[WEEK] nessuna bozza trovata per key=$_bozzaKey, rimango su W${widget.scheda.settimanaCorrente}');
         }
-        if (_weekSnapshots.isNotEmpty) {
-          final latestWeek = _weekSnapshots.keys.reduce(max);
-          if (kDebugMode) {
-            debugPrint('[WEEK] ripristino da store settimana piu recente=$latestWeek');
-          }
-          _applySnapshotForWeek(latestWeek);
-        }
+        // No bozza: stay on the saved settimanaCorrente so the card and the
+        // detail screen always show the same week.  The week chips are already
+        // all visible (populated above from eserciziPerSettimana).
         _snapshotCurrentWeek();
         return;
       }
@@ -345,8 +367,12 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
     final weeks = <int>{
       widget.scheda.settimanaCorrente,
       ..._weekSnapshots.keys,
+      ...widget.scheda.eserciziPerSettimana.keys,
     }.toList()
       ..sort();
+    if (kDebugMode) {
+      debugPrint('[TIMELINE] "${widget.scheda.nome}" settimanaCorrente=${widget.scheda.settimanaCorrente} eperSett.keys=${widget.scheda.eserciziPerSettimana.keys.toList()..sort()} snapshots=${_weekSnapshots.keys.toList()..sort()} result=$weeks');
+    }
     return weeks;
   }
 
@@ -373,13 +399,20 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
       return _statsFromScheda(widget.scheda);
     }
 
-    final raw = _weekSnapshots[week];
+    var raw = _weekSnapshots[week];
     if (raw == null) {
-      return {
-        'exercises': 0,
-        'totalSeries': 0,
-        'completedSeries': 0,
-      };
+      final embeddedEsercizi = widget.scheda.eserciziPerSettimana[week];
+      if (embeddedEsercizi == null) {
+        return {
+          'exercises': 0,
+          'totalSeries': 0,
+          'completedSeries': 0,
+        };
+      }
+      final weekJson = Map<String, dynamic>.from(widget.scheda.toJson());
+      weekJson['settimanaCorrente'] = week;
+      weekJson['esercizi'] = embeddedEsercizi.map((e) => e.toJson()).toList();
+      raw = weekJson;
     }
 
     try {
@@ -588,7 +621,9 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
             if (v is num) out[e.key.toString()] = v.toDouble();
           }
         }
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('Caricamento PR cloud fallito: $e');
+      }
     }
 
     return out;
@@ -699,7 +734,9 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
           'personal_records': records,
           'ultimo_aggiornamento_pr': DateTime.now().toIso8601String(),
         }, SetOptions(merge: true));
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('Salvataggio PR cloud fallito: $e');
+      }
     }
 
     final perc = esercizio.percentualeMassimale ?? _inferPercentuale(esercizio);
@@ -1014,7 +1051,9 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
                       itemCount: storicoEs.length,
                       itemBuilder: (context, i) {
                         var all = storicoEs[i];
-                        var es = all.scheda.esercizi.firstWhere((e) => _traduciNome(e.nome).toLowerCase().trim() == nomeTargetIta);
+                        final esOrNull = all.scheda.esercizi.where((e) => _traduciNome(e.nome).toLowerCase().trim() == nomeTargetIta).firstOrNull;
+                        if (esOrNull == null) return const SizedBox.shrink();
+                        var es = esOrNull;
                         
                         String dataStr = '${all.data.day}/${all.data.month}/${all.data.year}';
                         return Card(
@@ -1435,7 +1474,9 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
             child: Row(
               children: weeks.map((w) {
                 final isCurrent = w == widget.scheda.settimanaCorrente;
-                final hasSnapshot = _weekSnapshots.containsKey(w) || isCurrent;
+                final hasSnapshot = _weekSnapshots.containsKey(w) ||
+                    widget.scheda.eserciziPerSettimana.containsKey(w) ||
+                    isCurrent;
                 return Padding(
                   padding: const EdgeInsets.only(right: 6),
                   child: ChoiceChip(
@@ -1641,21 +1682,31 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
     bool prevIsSuperSet = index > 0 && widget.scheda.esercizi[index - 1].tecniche.any((t) => t.toLowerCase().contains('super'));
     bool nextIsSuperSet = index < widget.scheda.esercizi.length - 1 && widget.scheda.esercizi[index + 1].tecniche.any((t) => t.toLowerCase().contains('super'));
 
-    // 👇 RICERCA NEL DATABASE BLINDATA (Ignora maiuscole)
-    String nomeTargetIta = _traduciNome(esercizio.nome).toLowerCase().trim();
+    // Ricerca nel database: prima esatta, poi token-based per nomi parziali/brevi
+    final nomeTargetNorm = _normalizzaTesto(_traduciNome(esercizio.nome));
+    final nomeOriginaleNorm = _normalizzaTesto(esercizio.nome);
     final matchDb = _databaseEsercizi.cast<Map<String, dynamic>?>().firstWhere(
       (e) {
         if (e == null) return false;
-        String dbNome = e['nome'].toString().toLowerCase().trim();
-        String dbNomeTradotto = _traduciNome(e['nome'].toString()).toLowerCase().trim();
-        String targetOriginale = esercizio.nome.toLowerCase().trim();
+        final dbNorm = _normalizzaTesto(e['nome'].toString());
 
-        return dbNomeTradotto == nomeTargetIta || 
-               dbNome == nomeTargetIta || 
-               dbNomeTradotto == targetOriginale || 
-               dbNome == targetOriginale;
-      }, 
-      orElse: () => null
+        // 1. Match esatto dopo normalizzazione
+        if (dbNorm == nomeTargetNorm || dbNorm == nomeOriginaleNorm) return true;
+
+        // 2. Token match: tutti i token significativi del target sono nel DB
+        //    es. "squat" (1 token) matcha "squat completo con bilanciere"
+        final targetTokens = nomeTargetNorm.split(' ').where((t) => t.length >= 4).toList();
+        final origTokens = nomeOriginaleNorm.split(' ').where((t) => t.length >= 4).toList();
+        if (targetTokens.isNotEmpty && targetTokens.every((t) => dbNorm.contains(t))) return true;
+        if (origTokens.isNotEmpty && origTokens.every((t) => dbNorm.contains(t))) return true;
+
+        // 3. DB name è substring del target (es. "panca piana" matcha "panca piana con bilanciere presa media")
+        final dbTokens = dbNorm.split(' ').where((t) => t.length >= 4).toList();
+        if (dbTokens.length <= 3 && dbTokens.every((t) => nomeTargetNorm.contains(t))) return true;
+
+        return false;
+      },
+      orElse: () => null,
     );
 
     return Column(
@@ -1672,7 +1723,31 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
           key: ValueKey('dismiss_${esercizio.nome}_$index'),
           direction: DismissDirection.endToStart,
           background: Container(color: Colors.red, alignment: Alignment.centerRight, padding: const EdgeInsets.symmetric(horizontal: 20), child: const Icon(Icons.delete, color: Colors.white)),
-          onDismissed: (direction) { setState(() { widget.scheda.esercizi.removeAt(index); }); },
+          confirmDismiss: (direction) async {
+            final bool? confirmed = await showDialog<bool>(
+              context: context,
+              builder: (context) => AlertDialog(
+                title: const Text('Elimina esercizio'),
+                content: Text('Sei sicuro di voler eliminare "${esercizio.nome}"? Questa azione è irreversibile.'),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Annulla'),
+                  ),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.redAccent,
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: () => Navigator.pop(context, true),
+                    child: const Text('Sì, elimina'),
+                  ),
+                ],
+              ),
+            );
+            return confirmed == true;
+          },
+          onDismissed: (direction) { setState(() { widget.scheda.esercizi.removeAt(index); }); _scheduleBozzaSave(); },
           onUpdate: (details) {
             if (details.reached) {
               _scheduleBozzaSave();
@@ -1843,7 +1918,7 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
                             children: [
                               SizedBox(width: 30, child: Text('${sIdx + 1}º', style: const TextStyle(color: Colors.grey, fontSize: 12))),
                               Expanded(flex: 3, child: TextFormField(
-                                key: ValueKey('peso_${esercizio.nome}_$sIdx'),
+                                key: ValueKey('peso_${widget.scheda.settimanaCorrente}_${esercizio.nome}_$sIdx'),
                                 initialValue: serie.peso,
                                 keyboardType: TextInputType.number,
                                 decoration: InputDecoration(
@@ -1860,7 +1935,7 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
                                 },
                               )),
                               Expanded(flex: 3, child: TextFormField(
-                                key: ValueKey('reps_${esercizio.nome}_$sIdx'),
+                                key: ValueKey('reps_${widget.scheda.settimanaCorrente}_${esercizio.nome}_$sIdx'),
                                 initialValue: serie.ripetizioniFatte,
                                 keyboardType: TextInputType.number,
                                 decoration: InputDecoration(
@@ -1875,7 +1950,7 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
                                 },
                               )),
                               Expanded(flex: 2, child: TextFormField(
-                                key: ValueKey('int_${esercizio.nome}_$sIdx'),
+                                key: ValueKey('int_${widget.scheda.settimanaCorrente}_${esercizio.nome}_$sIdx'),
                                 initialValue: esercizio.modalitaIntensita == 'percentuale' ? serie.percentualeTarget : serie.rpe,
                                 keyboardType: TextInputType.number,
                                 decoration: InputDecoration(

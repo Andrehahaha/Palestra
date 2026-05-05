@@ -1,9 +1,7 @@
 import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -53,6 +51,7 @@ class AiService {
   );
   static String? _lastError;
   static AiStructuredPlan? _lastStructuredPlan;
+  static Map<String, dynamic>? _lastDebugJson;
 
   static String? consumeLastError() {
     final value = _lastError;
@@ -63,6 +62,12 @@ class AiService {
   static AiStructuredPlan? consumeLastStructuredPlan() {
     final value = _lastStructuredPlan;
     _lastStructuredPlan = null;
+    return value;
+  }
+
+  static Map<String, dynamic>? consumeLastDebugJson() {
+    final value = _lastDebugJson;
+    _lastDebugJson = null;
     return value;
   }
 
@@ -868,6 +873,40 @@ class AiService {
     return cleaned;
   }
 
+  static const _tecnicheKeywords = <String, List<String>>{
+    'Superset':       ['superset', 'super set', 'ss'],
+    'Drop Set':       ['drop set', 'dropset', 'stripping', 'scalata'],
+    'Stripping':      ['stripping'],
+    'Rest Pause':     ['rest pause', 'rest-pause', 'restpause'],
+    'Myo-reps':       ['myo-rep', 'myorep', 'myo rep'],
+    'Giant Set':      ['giant set', 'giantset'],
+    'Cluster Set':    ['cluster set', 'clusterset'],
+    'Top Set':        ['top set', 'topset'],
+    'Feeder Set':     ['feeder set', 'feederset'],
+    'AMRAP':          ['amrap'],
+    'EMOM':           ['emom'],
+    'Piramidale':     ['piramidale', 'piramidale', 'pyramid'],
+    'Back off':       ['back off', 'backoff', 'back-off'],
+    'Negative':       ['negativa', 'negative', 'eccentrica'],
+    'Isometria':      ['isometri', 'iso hold'],
+    'Trisets':        ['triset', 'tri-set'],
+    'Pre-stancaggio': ['pre-stanc', 'pre stanc', 'pre-exhaust'],
+    'Burnouts':       ['burnout'],
+    'Monopodalico':   ['monopod', 'unilateral', 'singola gamba', 'singolo braccio'],
+    'Warm Up':        ['warm up', 'warmup', 'riscaldamento'],
+  };
+
+  static List<String> _extractTechniqueFromText(String text) {
+    final lower = text.toLowerCase();
+    final found = <String>[];
+    for (final entry in _tecnicheKeywords.entries) {
+      if (entry.value.any((kw) => lower.contains(kw))) {
+        found.add(entry.key);
+      }
+    }
+    return found;
+  }
+
   static String _buildSetRepContext(
     Map<String, dynamic> exercise, {
     bool tagsOnly = false,
@@ -1416,7 +1455,7 @@ class AiService {
 
             final tecnicheValue = es['tecniche'];
             final metodo = es['metodo']?.toString().trim();
-            final tecniche = tecnicheValue is List
+            List<String> tecniche = tecnicheValue is List
                 ? tecnicheValue
                       .map((t) => t.toString())
                       .where((t) => t.trim().isNotEmpty)
@@ -1425,9 +1464,36 @@ class AiService {
                 ? <String>[tecnicheValue.trim()]
                 : (metodo != null && metodo.isNotEmpty)
                 ? <String>[metodo]
-                : <String>['Classico'];
+                : <String>[];
 
-            final rirDaInput = es['rirTarget'] ?? es['rir'] ?? es['rpe'];
+            // Fallback: se nessuna tecnica dal JSON, cerca nei campi testuali
+            if (tecniche.isEmpty || (tecniche.length == 1 && tecniche.first.toLowerCase() == 'classico')) {
+              final testoLibero = [
+                es['nome']?.toString() ?? '',
+                es['note']?.toString() ?? '',
+                es['descrizione']?.toString() ?? '',
+                es['metodo']?.toString() ?? '',
+                es['tags'] is List ? (es['tags'] as List).join(' ') : (es['tags']?.toString() ?? ''),
+              ].join(' ');
+              final estratte = _extractTechniqueFromText(testoLibero);
+              if (estratte.isNotEmpty) tecniche = estratte;
+            }
+
+            if (tecniche.isEmpty) tecniche = ['Classico'];
+
+            // Estrai RIR dalla nota se non è nel campo dedicato (es. "RIR 2", "RIR: 2-3")
+            final noteRaw = (es['note'] ?? es['descrizione'])?.toString();
+            double? rirFromNote;
+            String? notePulita = noteRaw;
+            if (noteRaw != null && es['rirTarget'] == null && es['rir'] == null && es['rpe'] == null) {
+              final rirMatch = RegExp(r'[Rr][Ii][Rr]\s*:?\s*(\d+(?:[.,]\d+)?)', caseSensitive: false).firstMatch(noteRaw);
+              if (rirMatch != null) {
+                rirFromNote = double.tryParse((rirMatch.group(1) ?? '').replaceAll(',', '.'));
+                notePulita = noteRaw.replaceAll(RegExp(r'[Rr][Ii][Rr]\s*:?\s*\d+(?:[.,\-]\d+)*\s*'), '').trim();
+                if (notePulita.isEmpty) notePulita = null;
+              }
+            }
+            final rirDaInput = es['rirTarget'] ?? es['rir'] ?? es['rpe'] ?? rirFromNote?.toString();
 
             final serieAttiveRaw = es['serieAttive'];
             final serieAttiveList = serieAttiveRaw is List
@@ -1535,7 +1601,7 @@ class AiService {
               'ripetizioni': ripetizioniFinal,
               'recupero': (es['recupero'] ?? es['rest'] ?? es['pausa'] ?? '')
                   .toString(),
-              'note': es['note']?.toString(),
+              'note': notePulita,
               'tecniche': tecniche,
               'modalitaIntensita': modalita,
               'rirTarget': modalita == 'rir' && rirDaInput != null
@@ -1580,6 +1646,8 @@ class AiService {
   static List<Map<String, dynamic>> normalizeImportedSchedeForTest(
     List<dynamic> rawItems, {
     List<String> nomiUfficiali = const [],
+    bool enrichSetRepFromTags = true,
+    bool synthesizeMissingWeeks = true,
   }) {
     if (kDebugMode) {
       // ignore: avoid_print
@@ -1587,6 +1655,8 @@ class AiService {
     }
     return _readSchedeFromGeneratedJson(
       rawItems,
+      enrichSetRepFromTags: enrichSetRepFromTags,
+      synthesizeMissingWeeks: synthesizeMissingWeeks,
     ).map((s) => s.toJson()).toList();
   }
 
@@ -1612,7 +1682,9 @@ class AiService {
     }
 
     try {
-      final idToken = await user.getIdToken(true);
+      final idToken = await user.getIdToken(true).timeout(
+        const Duration(seconds: 20),
+      );
 
       final proxyBases = <String>[];
 
@@ -2138,14 +2210,9 @@ class AiService {
       baseName.isEmpty ? scheda.nome : baseName,
     );
     final normalizedCategory = _normalizza(scheda.categoria);
-
-    final exerciseSignature = scheda.esercizi
-        .map((e) => _normalizza(e.nome))
-        .where((n) => n.isNotEmpty)
-        .take(6)
-        .join('|');
-
-    return '$normalizedCategory|$normalizedName|$exerciseSignature';
+    // Intentionally excludes exercise signature: exercises can legitimately
+    // change between weeks, so identity is name+category only.
+    return '$normalizedCategory|$normalizedName';
   }
 
   static AiImportWeeklyResolution collapseImportedSchedeForWeeklyProgression(
@@ -2222,8 +2289,22 @@ class AiService {
       baseJson['settimanaCorrente'] = 1;
 
       final visibleScheda = Scheda.fromJson(baseJson);
+
+      // Embed ALL weeks' exercises into the Scheda so it is self-contained.
+      for (final candidate in ordered) {
+        final week = _inferWeekFromScheda(candidate);
+        visibleScheda.eserciziPerSettimana[week] = candidate.esercizi;
+      }
+
+      if (kDebugMode) {
+        // ignore: avoid_print
+        print('[COLLAPSE] "${visibleScheda.nome}" id=${visibleScheda.id} weeks=${visibleScheda.eserciziPerSettimana.keys.toList()..sort()} exercises_per_week=${visibleScheda.eserciziPerSettimana.map((k, v) => MapEntry(k, v.length))}');
+      }
+
       schedeVisibili.add(visibleScheda);
 
+      // Also build the external snapshot store for backwards compat
+      // (dettaglio_scheda_screen still reads from SharedPreferences).
       final snapshots = <String, dynamic>{};
       for (final candidate in ordered) {
         final week = _inferWeekFromScheda(candidate);
@@ -2248,7 +2329,11 @@ class AiService {
     );
   }
 
-  static List<Scheda> _readSchedeFromGeneratedJson(List<dynamic> items) {
+  static List<Scheda> _readSchedeFromGeneratedJson(
+    List<dynamic> items, {
+    bool enrichSetRepFromTags = true,
+    bool synthesizeMissingWeeks = true,
+  }) {
     if (kDebugMode) {
       // ignore: avoid_print
       print('AI READ JSON DEBUG items=${items.length}');
@@ -2259,8 +2344,12 @@ class AiService {
       parsedMaps.add(Map<String, dynamic>.from(raw.cast<String, dynamic>()));
     }
 
-    _enrichSetRepFromTagsInPlace(parsedMaps);
-    _expandWeeksFromSingleWeekInPlace(parsedMaps);
+    if (enrichSetRepFromTags) {
+      _enrichSetRepFromTagsInPlace(parsedMaps);
+    }
+    if (synthesizeMissingWeeks) {
+      _expandWeeksFromSingleWeekInPlace(parsedMaps);
+    }
     _coalesceWeekCategoriesInPlace(parsedMaps);
 
     final out = <Scheda>[];
@@ -2301,7 +2390,7 @@ class AiService {
       final payload = {
         payloadField: base64Encode(bytes),
         'nomiUfficiali': nomiUfficiali,
-        if (kDebugMode) 'debugJsonRead': true,
+        'debugJsonRead': true,
       };
 
       final isPdf = endpoint == 'analyzeWorkoutPdf';
@@ -2346,6 +2435,12 @@ class AiService {
 
       _logJsonReadDebug(sourceLabel, risultato['debugJsonRead']);
       _captureStructuredPlan(risultato);
+      final debugPayload = risultato['debugJsonRead'];
+      if (debugPayload is Map<String, dynamic>) {
+        _lastDebugJson = debugPayload;
+      } else if (debugPayload is Map) {
+        _lastDebugJson = Map<String, dynamic>.from(debugPayload);
+      }
 
       final items = risultato['items'];
       if (items is! List) {
@@ -2353,7 +2448,15 @@ class AiService {
         return null;
       }
 
-      final schede = _readSchedeFromGeneratedJson(items);
+      // For PDF imports we keep AI values as-is: no inferred set/rep overrides
+      // and no synthetic week progression from a single detected week.
+      final shouldInferFromTags = !isPdf;
+      final shouldSynthesizeWeeks = !isPdf;
+      final schede = _readSchedeFromGeneratedJson(
+        items,
+        enrichSetRepFromTags: shouldInferFromTags,
+        synthesizeMissingWeeks: shouldSynthesizeWeeks,
+      );
       if (schede.isEmpty) {
         _lastError =
             'Output AI non valido: nessuna scheda leggibile dal motore app.';

@@ -104,7 +104,7 @@ class _ProfiloScreenState extends State<ProfiloScreen> {
       ),
       body: _isLoading
           ? const Center(
-              child: CircularProgressIndicator(color: Colors.deepOrange),
+              child: CircularProgressIndicator(color: Color(0xFFFF6B1A)),
             )
           : _buildSezioneAttiva(),
     );
@@ -699,7 +699,7 @@ class _ProfiloScreenState extends State<ProfiloScreen> {
     if (totaleSerie == 0) return [];
 
     List<Color> colori = [
-      Colors.deepOrange,
+      Color(0xFFFF6B1A),
       Colors.blue,
       Colors.green,
       Colors.purple,
@@ -784,7 +784,7 @@ class _ProfiloScreenState extends State<ProfiloScreen> {
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.bold,
-              color: Colors.deepOrange,
+              color: Color(0xFFFF6B1A),
             ),
           ),
           const SizedBox(height: 8),
@@ -890,7 +890,7 @@ class _ProfiloScreenState extends State<ProfiloScreen> {
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.bold,
-              color: Colors.deepOrange,
+              color: Color(0xFFFF6B1A),
             ),
           ),
           const SizedBox(height: 16),
@@ -917,7 +917,7 @@ class _ProfiloScreenState extends State<ProfiloScreen> {
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.bold,
-              color: Colors.deepOrange,
+              color: Color(0xFFFF6B1A),
             ),
           ),
           const SizedBox(height: 8),
@@ -935,7 +935,7 @@ class _ProfiloScreenState extends State<ProfiloScreen> {
                 ),
                 prefixIcon: const Icon(
                   Icons.fitness_center,
-                  color: Colors.deepOrange,
+                  color: Color(0xFFFF6B1A),
                 ),
                 filled: true,
                 fillColor: Colors.black12,
@@ -1035,12 +1035,12 @@ class _ProfiloScreenState extends State<ProfiloScreen> {
                           LineChartBarData(
                             spots: puntiLineari,
                             isCurved: true,
-                            color: Colors.deepOrange,
+                            color: Color(0xFFFF6B1A),
                             barWidth: 4,
                             dotData: const FlDotData(show: true),
                             belowBarData: BarAreaData(
                               show: true,
-                              color: Colors.deepOrange.withValues(alpha: 0.15),
+                              color: Color(0xFFFF6B1A).withValues(alpha: 0.15),
                             ),
                           ),
                         ],
@@ -1110,7 +1110,7 @@ class _ProfiloScreenState extends State<ProfiloScreen> {
             onChanged: (value) => setState(() => _searchQuery = value),
             decoration: InputDecoration(
               hintText: 'Cerca esercizio...',
-              prefixIcon: const Icon(Icons.search, color: Colors.deepOrange),
+              prefixIcon: const Icon(Icons.search, color: Color(0xFFFF6B1A)),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(25),
               ),
@@ -1136,7 +1136,7 @@ class _ProfiloScreenState extends State<ProfiloScreen> {
               return ExpansionTile(
                 leading: Icon(
                   _prendiIconaMuscolo(macro),
-                  color: Colors.deepOrange,
+                  color: Color(0xFFFF6B1A),
                   size: 28,
                 ),
                 title: Text(
@@ -1183,7 +1183,7 @@ class _ProfiloScreenState extends State<ProfiloScreen> {
                           leading: haVideo
                               ? const Icon(
                                   Icons.play_circle_outline,
-                                  color: Colors.deepOrange,
+                                  color: Color(0xFFFF6B1A),
                                   size: 20,
                                 )
                               : const Icon(
@@ -1224,7 +1224,7 @@ class _ProfiloScreenState extends State<ProfiloScreen> {
         children: [
           const Row(
             children: [
-              Icon(Icons.assignment_ind, color: Colors.deepOrange),
+              Icon(Icons.assignment_ind, color: Color(0xFFFF6B1A)),
               SizedBox(width: 8),
               Text(
                 'I Tuoi Dati Fisici',
@@ -1295,7 +1295,7 @@ class _ProfiloScreenState extends State<ProfiloScreen> {
           ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 16),
-              backgroundColor: Colors.deepOrange,
+              backgroundColor: Color(0xFFFF6B1A),
               foregroundColor: Colors.white,
             ),
             onPressed: _salvaDatiProfilo,

@@ -135,69 +135,82 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _caricaDati() async {
     final prefs = await SharedPreferences.getInstance();
     final String? tracciatiSalvati = prefs.getString('esercizi_tracciati_pr');
-    if (tracciatiSalvati != null) {
-      eserciziTracciati = List<String>.from(jsonDecode(tracciatiSalvati));
-    } else {
+    try {
+      eserciziTracciati = tracciatiSalvati != null
+          ? List<String>.from(jsonDecode(tracciatiSalvati))
+          : List.from(prDiDefault);
+    } catch (_) {
       eserciziTracciati = List.from(prDiDefault);
+      await prefs.remove('esercizi_tracciati_pr');
     }
 
     final String? storicoSalvato = prefs.getString('storico_salvato');
-    
+
     final String? prGlobaliJson = prefs.getString('personal_records');
     tuttiIPR.clear();
     if (prGlobaliJson != null) {
-      Map<String, dynamic> dec = jsonDecode(prGlobaliJson);
-      dec.forEach((k, v) {
-        if (v is num) {
-          tuttiIPR[k] = v.toDouble();
-        } else {
-          final parsed = double.tryParse(v.toString().replaceAll(',', '.'));
-          if (parsed != null) {
-            tuttiIPR[k] = parsed;
+      try {
+        Map<String, dynamic> dec = jsonDecode(prGlobaliJson);
+        dec.forEach((k, v) {
+          if (v is num) {
+            tuttiIPR[k] = v.toDouble();
+          } else {
+            final parsed = double.tryParse(v.toString().replaceAll(',', '.'));
+            if (parsed != null) {
+              tuttiIPR[k] = parsed;
+            }
           }
-        }
-      });
+        });
+      } catch (_) {
+        await prefs.remove('personal_records');
+      }
     }
 
     if (storicoSalvato != null) {
-      final List<dynamic> jsonDecodificato = jsonDecode(storicoSalvato);
-      final storico = jsonDecodificato.map((e) => Allenamento.fromJson(e)).toList();
-      
-      if (storico.isNotEmpty) {
-        final allenamentiVeri = storico.where((a) => !a.scheda.nome.contains('🏆 TEST PR')).toList()
-          ..sort((a, b) => a.data.compareTo(b.data));
-        
-        allenamentiTotali = allenamentiVeri.length;
-        ultimoAllenamento = allenamentiVeri.isNotEmpty ? allenamentiVeri.last : null;
-        
-        for (var allenamento in storico) {
-          for (var esercizio in allenamento.scheda.esercizi) {
-            bool ignoraPerPR = esercizio.tecniche.contains('Back off') || esercizio.tecniche.contains('Drop Set') || esercizio.tecniche.contains('Stripping');
-            if (ignoraPerPR) continue;
+      try {
+        final List<dynamic> jsonDecodificato = jsonDecode(storicoSalvato);
+        final storico = jsonDecodificato
+            .map((e) => Allenamento.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList();
 
-            for (var serie in esercizio.serieAttive) {
-              if (serie.isCompletata && serie.peso.isNotEmpty && serie.tipo != 'Avvicinamento') {
-                double pesoCorrente = double.tryParse(serie.peso.replaceAll(',', '.')) ?? 0.0;
-                if (pesoCorrente > 0) {
-                  String nomePulito = (DizionarioEsercizi.daIngleseAItaliano[esercizio.nome] ?? esercizio.nome).trim();
-                  nomePulito = _canonicalExerciseName(nomePulito);
+        if (storico.isNotEmpty) {
+          final allenamentiVeri = storico.where((a) => !a.scheda.nome.contains('🏆 TEST PR')).toList()
+            ..sort((a, b) => a.data.compareTo(b.data));
 
-                  var matches = tuttiIPR.keys.where((k) => k.toLowerCase() == nomePulito.toLowerCase());
-                  String? keyEsistente = matches.isNotEmpty ? matches.first : null;
+          allenamentiTotali = allenamentiVeri.length;
+          ultimoAllenamento = allenamentiVeri.isNotEmpty ? allenamentiVeri.last : null;
 
-                  if (keyEsistente != null) {
-                    if (pesoCorrente > tuttiIPR[keyEsistente]!) tuttiIPR[keyEsistente] = pesoCorrente;
-                  } else {
-                    tuttiIPR[nomePulito] = pesoCorrente;
+          for (var allenamento in storico) {
+            for (var esercizio in allenamento.scheda.esercizi) {
+              bool ignoraPerPR = esercizio.tecniche.contains('Back off') || esercizio.tecniche.contains('Drop Set') || esercizio.tecniche.contains('Stripping');
+              if (ignoraPerPR) continue;
+
+              for (var serie in esercizio.serieAttive) {
+                if (serie.isCompletata && serie.peso.isNotEmpty && serie.tipo != 'Avvicinamento') {
+                  double pesoCorrente = double.tryParse(serie.peso.replaceAll(',', '.')) ?? 0.0;
+                  if (pesoCorrente > 0) {
+                    String nomePulito = (DizionarioEsercizi.daIngleseAItaliano[esercizio.nome] ?? esercizio.nome).trim();
+                    nomePulito = _canonicalExerciseName(nomePulito);
+
+                    var matches = tuttiIPR.keys.where((k) => k.toLowerCase() == nomePulito.toLowerCase());
+                    String? keyEsistente = matches.isNotEmpty ? matches.first : null;
+
+                    if (keyEsistente != null) {
+                      if (pesoCorrente > tuttiIPR[keyEsistente]!) tuttiIPR[keyEsistente] = pesoCorrente;
+                    } else {
+                      tuttiIPR[nomePulito] = pesoCorrente;
+                    }
                   }
                 }
               }
             }
           }
         }
+      } catch (_) {
+        await prefs.remove('storico_salvato');
       }
     }
-    _sincronizzaPRConCloud(tuttiIPR);
+    await _sincronizzaPRConCloud(tuttiIPR);
     if (mounted) setState(() { _isLoading = false; });
   }
 
@@ -224,12 +237,15 @@ class _HomeScreenState extends State<HomeScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Traccia nuovo Record', style: TextStyle(fontWeight: FontWeight.bold)),
+        backgroundColor: const Color(0xFF141414),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Traccia Record', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Cerca dal database l\'esercizio:', style: TextStyle(fontSize: 14, color: Colors.grey)),
-            const SizedBox(height: 16),
+            const Text('Cerca dal database esercizi:', style: TextStyle(fontSize: 13, color: Color(0xFF888888))),
+            const SizedBox(height: 14),
             Autocomplete<String>(
               optionsBuilder: (TextEditingValue text) {
                 if (text.text.isEmpty) return const Iterable<String>.empty();
@@ -239,17 +255,41 @@ class _HomeScreenState extends State<HomeScreen> {
               fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
                 controller.addListener(() { cercaController.text = controller.text; });
                 return TextField(
-                  controller: controller, focusNode: focusNode,
-                  decoration: const InputDecoration(hintText: 'Es: Stacco da Terra...', border: OutlineInputBorder(), prefixIcon: Icon(Icons.search)),
+                  controller: controller,
+                  focusNode: focusNode,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    hintText: 'Es: Stacco da Terra...',
+                    hintStyle: const TextStyle(color: Color(0xFF444444)),
+                    prefixIcon: const Icon(Icons.search, color: Color(0xFF555555), size: 20),
+                    filled: true,
+                    fillColor: const Color(0xFF1E1E1E),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFFFF6B1A), width: 1.5),
+                    ),
+                  ),
                 );
               },
             ),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annulla', style: TextStyle(color: Colors.grey))),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Annulla', style: TextStyle(color: Color(0xFF666666))),
+          ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.deepOrange, foregroundColor: Colors.white),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFF6B1A), foregroundColor: Colors.white),
             onPressed: () {
               String val = cercaController.text.trim();
               if (val.isNotEmpty) {
@@ -260,7 +300,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 }
               }
               Navigator.pop(context);
-            }, 
+            },
             child: const Text('Aggiungi'),
           ),
         ],
@@ -269,7 +309,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _eseguiBackup() async {
-    showDialog(context: context, barrierDismissible: false, builder: (context) => const Center(child: CircularProgressIndicator(color: Colors.deepOrange)));
+    showDialog(context: context, barrierDismissible: false, builder: (context) => const Center(child: CircularProgressIndicator(color: Color(0xFFFF6B1A))));
     try {
       final prefs = await SharedPreferences.getInstance();
       final String schedeJson = prefs.getString('schede_salvate') ?? '[]';
@@ -305,7 +345,7 @@ class _HomeScreenState extends State<HomeScreen> {
       FilePickerResult? result = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['json']);
       if (result != null && result.files.single.path != null) {
         if (!mounted) return;
-        showDialog(context: context, barrierDismissible: false, builder: (context) => const Center(child: CircularProgressIndicator(color: Colors.lightBlue)));
+        showDialog(context: context, barrierDismissible: false, builder: (context) => const Center(child: CircularProgressIndicator(color: Color(0xFFFF6B1A))));
         File file = File(result.files.single.path!);
         String contenuto = await file.readAsString();
         Map<String, dynamic> datiImportati = jsonDecode(contenuto);
@@ -335,23 +375,48 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    const orange = Color(0xFFFF6B1A);
+    const red = Color(0xFFCC1A1A);
+
     return Scaffold(
+      backgroundColor: const Color(0xFF0A0A0A),
       appBar: AppBar(
-        title: const Text('Bentornato! 🏋️‍♂️'),
+        title: const Text('Tiger'),
         actions: [
-          IconButton(icon: const Icon(Icons.file_upload, color: Colors.lightBlue), tooltip: 'Importa Backup', onPressed: _importaBackup),
-          IconButton(icon: const Icon(Icons.save_alt, color: Colors.deepOrange), tooltip: 'Esporta Backup', onPressed: _eseguiBackup),
           IconButton(
-            icon: const Icon(Icons.logout, color: Colors.redAccent), tooltip: 'Esci',
+            icon: const Icon(Icons.file_upload, color: Color(0xFF666666)),
+            tooltip: 'Importa Backup',
+            onPressed: _importaBackup,
+          ),
+          IconButton(
+            icon: const Icon(Icons.save_alt, color: Color(0xFF666666)),
+            tooltip: 'Esporta Backup',
+            onPressed: _eseguiBackup,
+          ),
+          IconButton(
+            icon: const Icon(Icons.logout, color: Color(0xFF666666)),
+            tooltip: 'Esci',
             onPressed: () async {
-              bool confermato = await showDialog(
+              final confermato = await showDialog<bool>(
                 context: context,
                 builder: (context) => AlertDialog(
-                  title: const Text('Vuoi uscire?'),
-                  content: const Text('Dovrai fare di nuovo il login per accedere alle tue schede.'),
+                  backgroundColor: const Color(0xFF141414),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  title: const Text('Uscire?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
+                  content: const Text(
+                    'Dovrai fare di nuovo il login per accedere.',
+                    style: TextStyle(color: Color(0xFFAAAAAA)),
+                  ),
                   actions: [
-                    TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annulla', style: TextStyle(color: Colors.grey))),
-                    ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white), onPressed: () => Navigator.pop(context, true), child: const Text('Esci')),
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Annulla', style: TextStyle(color: Color(0xFF666666))),
+                    ),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(backgroundColor: red, foregroundColor: Colors.white),
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('Esci'),
+                    ),
                   ],
                 ),
               ) ?? false;
@@ -360,88 +425,248 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      body: _isLoading 
-        ? const Center(child: CircularProgressIndicator())
-        : SingleChildScrollView(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Text('Riepilogo Attività', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 16),
-                Card(
-                  color: Colors.deepOrange.withValues(alpha: 0.2),
-                  child: Padding(
-                    padding: const EdgeInsets.all(20.0),
-                    child: Column(
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator(color: orange))
+          : SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // ── Stats Card ──────────────────────────────────
+                  Container(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF141414),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: orange.withValues(alpha: 0.12),
+                          blurRadius: 24,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    padding: const EdgeInsets.all(24),
+                    child: Row(
                       children: [
-                        const Icon(Icons.local_fire_department, size: 48, color: Colors.orange),
-                        const SizedBox(height: 8),
-                        Text('$allenamentiTotali', style: const TextStyle(fontSize: 36, fontWeight: FontWeight.bold)),
-                        const Text('Allenamenti Completati', style: TextStyle(fontSize: 16)),
+                        Container(
+                          width: 64,
+                          height: 64,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: const LinearGradient(
+                              colors: [red, orange],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: orange.withValues(alpha: 0.35),
+                                blurRadius: 16,
+                              ),
+                            ],
+                          ),
+                          child: const Icon(Icons.local_fire_department, size: 32, color: Colors.white),
+                        ),
+                        const SizedBox(width: 20),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '$allenamentiTotali',
+                              style: const TextStyle(
+                                fontSize: 46,
+                                fontWeight: FontWeight.w900,
+                                color: Colors.white,
+                                height: 1,
+                              ),
+                            ),
+                            const Text(
+                              'ALLENAMENTI',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF666666),
+                                letterSpacing: 2,
+                              ),
+                            ),
+                          ],
+                        ),
                       ],
                     ),
                   ),
-                ),
-                const SizedBox(height: 24),
-                
-                if (ultimoAllenamento != null) ...[
-                  const Text('Ultimo Allenamento', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  Card(
-                    child: ListTile(
-                      leading: const Icon(Icons.check_circle, color: Colors.green, size: 30),
-                      title: Text(ultimoAllenamento!.scheda.nome, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-                      subtitle: Text('Data: ${ultimoAllenamento!.data.day}/${ultimoAllenamento!.data.month}/${ultimoAllenamento!.data.year}'),
-                    ),
-                  ),
-                ],
 
-                const SizedBox(height: 32),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Row(children: [Icon(Icons.emoji_events, color: Colors.amber), SizedBox(width: 8), Text('I Tuoi Record (PR)', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold))]),
-                    IconButton(icon: const Icon(Icons.add_circle, color: Colors.deepOrange, size: 28), onPressed: _mostraAggiungiPR)
-                  ],
-                ),
-                const SizedBox(height: 16),
-
-                if (eserciziTracciati.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.all(16.0),
-                    child: Text('Nessun esercizio in bacheca. Premi il tasto + per aggiungerne uno!', style: TextStyle(color: Colors.grey, fontSize: 16), textAlign: TextAlign.center),
-                  )
-                else
-                  Card(
-                    child: ListView.separated(
-                      shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), itemCount: eserciziTracciati.length,
-                      separatorBuilder: (context, index) => const Divider(height: 1, color: Colors.black26),
-                      itemBuilder: (context, index) {
-                        String nomeEsercizio = _canonicalExerciseName(eserciziTracciati[index]);
-
-                        double maxPeso = _readPrValueForExercise(nomeEsercizio);
-                        String pesoMostrato = maxPeso == 0.0 ? '--' : (maxPeso == maxPeso.truncateToDouble() ? maxPeso.toInt().toString() : maxPeso.toString());
-
-                        return ListTile(
-                          leading: const Icon(Icons.fitness_center, color: Colors.deepOrange),
-                          title: Text(nomeEsercizio, style: const TextStyle(fontWeight: FontWeight.bold)),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(maxPeso > 0 ? '$pesoMostrato kg' : 'Nessun dato', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: maxPeso > 0 ? Colors.green : Colors.grey)),
-                              const SizedBox(width: 8),
-                              IconButton(icon: const Icon(Icons.close, color: Colors.redAccent, size: 20), onPressed: () { setState(() { eserciziTracciati.removeAt(index); }); _salvaTracciati(); })
-                            ],
+                  // ── Ultimo Allenamento ────────────────────────
+                  if (ultimoAllenamento != null) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF141414),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                      ),
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF0D2A0D),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(Icons.check_circle_rounded, color: Color(0xFF4CAF50), size: 22),
                           ),
-                        );
-                      },
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  ultimoAllenamento!.scheda.nome,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 15,
+                                    color: Colors.white,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Ultimo: ${ultimoAllenamento!.data.day}/${ultimoAllenamento!.data.month}/${ultimoAllenamento!.data.year}',
+                                  style: const TextStyle(color: Color(0xFF888888), fontSize: 13),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
+                  ],
+
+                  const SizedBox(height: 28),
+
+                  // ── PR Section Header ─────────────────────────
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF2A2000),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(Icons.emoji_events, color: Color(0xFFFFB347), size: 20),
+                          ),
+                          const SizedBox(width: 10),
+                          const Text(
+                            'I TUOI RECORD',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                              letterSpacing: 2,
+                            ),
+                          ),
+                        ],
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.add_circle_rounded, color: orange, size: 28),
+                        onPressed: _mostraAggiungiPR,
+                      ),
+                    ],
                   ),
-                const SizedBox(height: 40), 
-              ],
+                  const SizedBox(height: 8),
+
+                  // ── PR List ───────────────────────────────────
+                  if (eserciziTracciati.isEmpty)
+                    Container(
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF141414),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+                      ),
+                      child: const Text(
+                        'Nessun record tracciato.\nPremi + per aggiungerne uno.',
+                        style: TextStyle(color: Color(0xFF555555), fontSize: 14),
+                        textAlign: TextAlign.center,
+                      ),
+                    )
+                  else
+                    Container(
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF141414),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                      ),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: eserciziTracciati.length,
+                        separatorBuilder: (_, _) => Divider(
+                          height: 1,
+                          color: Colors.white.withValues(alpha: 0.06),
+                          indent: 16,
+                          endIndent: 16,
+                        ),
+                        itemBuilder: (context, index) {
+                          final nomeEsercizio = _canonicalExerciseName(eserciziTracciati[index]);
+                          final maxPeso = _readPrValueForExercise(nomeEsercizio);
+                          final pesoMostrato = maxPeso == 0.0
+                              ? '--'
+                              : (maxPeso == maxPeso.truncateToDouble()
+                                  ? maxPeso.toInt().toString()
+                                  : maxPeso.toString());
+
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(
+                                    color: orange.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: const Icon(Icons.fitness_center, color: orange, size: 18),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    nomeEsercizio,
+                                    style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.white),
+                                  ),
+                                ),
+                                Text(
+                                  maxPeso > 0 ? '$pesoMostrato kg' : '—',
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w800,
+                                    color: maxPeso > 0 ? orange : const Color(0xFF444444),
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                IconButton(
+                                  icon: const Icon(Icons.close, color: Color(0xFF555555), size: 18),
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                  onPressed: () {
+                                    setState(() => eserciziTracciati.removeAt(index));
+                                    _salvaTracciati();
+                                  },
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                ],
+              ),
             ),
-          ),
     );
   }
 }

@@ -1,7 +1,10 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'firebase_options.dart';
 
@@ -16,6 +19,25 @@ import 'screens/wellness/dolore_screen.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Delete the corrupt Firestore SQLite directory BEFORE Firebase initializes.
+  // getApplicationSupportDirectory() on Android returns {filesDir}/flutter/ — Firestore
+  // lives one level up at {filesDir}/firestore/, so we check both paths.
+  final prefs = await SharedPreferences.getInstance();
+  if (!prefs.containsKey('firestore_db_deleted_v2')) {
+    try {
+      final appSupportDir = await getApplicationSupportDirectory();
+      for (final base in [appSupportDir.path, appSupportDir.parent.path]) {
+        final firestoreDir = Directory('$base/firestore');
+        if (await firestoreDir.exists()) {
+          await firestoreDir.delete(recursive: true);
+        }
+      }
+      await prefs.setBool('firestore_db_deleted_v2', true);
+    } catch (e) {
+      debugPrint('Pulizia Firestore locale fallita: $e');
+    }
+  }
+
   try {
     if (Firebase.apps.isEmpty) {
       await Firebase.initializeApp(
@@ -28,6 +50,9 @@ void main() async {
     if (e.code != 'duplicate-app') rethrow;
   }
 
+  // Disable local SQLite persistence permanently to prevent future accumulation.
+  FirebaseFirestore.instance.settings = const Settings(persistenceEnabled: false);
+
   runApp(const MyApp());
 }
 
@@ -36,18 +61,28 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const tigerOrange = Color(0xFFFF7A1A);
-    const tigerAmber = Color(0xFFFFB347);
-    const appBg = Color(0xFF0E1116);
-    const appSurface = Color(0xFF161B22);
-    const appSurfaceAlt = Color(0xFF1C2330);
+    const tigerOrange = Color(0xFFFF6B1A);
+    const tigerRed    = Color(0xFFCC1A1A);
+    const tigerAmber  = Color(0xFFFFB347);
+    const appBg       = Color(0xFF0A0A0A);
+    const appSurface  = Color(0xFF141414);
+    const appSurfaceAlt = Color(0xFF1E1E1E);
 
-    final colorScheme = ColorScheme.fromSeed(
-      seedColor: tigerOrange,
+    final colorScheme = ColorScheme(
       brightness: Brightness.dark,
       primary: tigerOrange,
-      secondary: tigerAmber,
+      onPrimary: Colors.white,
+      secondary: tigerRed,
+      onSecondary: Colors.white,
+      tertiary: tigerAmber,
+      onTertiary: Colors.black,
+      error: const Color(0xFFCF6679),
+      onError: Colors.black,
       surface: appSurface,
+      onSurface: Colors.white,
+      surfaceContainerHighest: appSurfaceAlt,
+      onSurfaceVariant: const Color(0xFFAAAAAA),
+      outline: const Color(0xFF333333),
     );
 
     return MaterialApp(
@@ -66,8 +101,8 @@ class MyApp extends StatelessWidget {
           titleTextStyle: TextStyle(
             color: Colors.white,
             fontSize: 22,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.2,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.5,
           ),
           iconTheme: IconThemeData(color: Colors.white),
         ),
@@ -77,43 +112,45 @@ class MyApp extends StatelessWidget {
           margin: const EdgeInsets.symmetric(vertical: 6),
           shadowColor: Colors.transparent,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-            side: BorderSide(color: Colors.white.withValues(alpha: 0.06)),
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
           ),
         ),
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
           fillColor: appSurfaceAlt,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.10)),
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
           ),
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.10)),
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
           ),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: tigerOrange, width: 1.3),
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: tigerOrange, width: 1.5),
           ),
+          labelStyle: const TextStyle(color: Color(0xFF9E9E9E)),
+          hintStyle: const TextStyle(color: Color(0xFF666666)),
         ),
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
             backgroundColor: tigerOrange,
             foregroundColor: Colors.white,
             elevation: 0,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            textStyle: const TextStyle(fontWeight: FontWeight.w700),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+            textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15, letterSpacing: 0.5),
           ),
         ),
         outlinedButtonTheme: OutlinedButtonThemeData(
           style: OutlinedButton.styleFrom(
             foregroundColor: Colors.white,
-            side: BorderSide(color: Colors.white.withValues(alpha: 0.22)),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            side: BorderSide(color: Colors.white.withValues(alpha: 0.25)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
           ),
         ),
         dividerTheme: DividerThemeData(
@@ -129,16 +166,19 @@ class MyApp extends StatelessWidget {
         ),
         chipTheme: ChipThemeData(
           backgroundColor: appSurfaceAlt,
-          selectedColor: tigerOrange.withValues(alpha: 0.18),
-          side: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          labelStyle: const TextStyle(color: Colors.white),
+          selectedColor: tigerOrange.withValues(alpha: 0.22),
+          side: BorderSide(color: Colors.white.withValues(alpha: 0.14)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          labelStyle: const TextStyle(color: Colors.white, fontSize: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         ),
         textTheme: const TextTheme(
-          titleLarge: TextStyle(fontWeight: FontWeight.w700),
+          titleLarge:  TextStyle(fontWeight: FontWeight.w800, letterSpacing: 0.2),
           titleMedium: TextStyle(fontWeight: FontWeight.w700),
-          bodyLarge: TextStyle(height: 1.25),
-          bodyMedium: TextStyle(height: 1.25),
+          titleSmall:  TextStyle(fontWeight: FontWeight.w600, color: Color(0xFFAAAAAA)),
+          bodyLarge:   TextStyle(height: 1.4),
+          bodyMedium:  TextStyle(height: 1.4, color: Color(0xFFDDDDDD)),
+          bodySmall:   TextStyle(color: Color(0xFF888888)),
         ),
       ),
       home: const AuthWrapper(),

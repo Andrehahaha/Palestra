@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'dart:io';
@@ -159,7 +161,9 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
             if (val is num) out[e.key.toString()] = val.toDouble();
           }
         }
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('Caricamento PR cloud fallito: $e');
+      }
     }
 
     return out;
@@ -309,7 +313,9 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
                 'personal_records': records,
                 'ultimo_aggiornamento_pr': DateTime.now().toIso8601String(),
               }, SetOptions(merge: true));
-        } catch (_) {}
+        } catch (e) {
+          debugPrint('Salvataggio PR cloud fallito: $e');
+        }
       }
 
       final prs = await _caricaPrAtleta();
@@ -367,7 +373,7 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
       final schedeNuove = <Scheda>[];
       for (var doc in snapshot.docs) {
         final data = doc.data();
-        bool giaPresente = mieSchede.any((s) => s.nome == data['nome']);
+        bool giaPresente = mieSchede.any((s) => s.id == (data['id']?.toString() ?? '') && (data['id']?.toString() ?? '').isNotEmpty);
         if (!giaPresente) {
           final schedaDalCoach = _applicaFallbackPrSuSchedaCoach(
             Scheda.fromJson(data),
@@ -405,7 +411,7 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
     }
   }
 
-  Future<void> _eliminaSchedaDalCloud(String nomeScheda) async {
+  Future<void> _eliminaSchedaDalCloud(String schedaId) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
@@ -413,7 +419,7 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
       final snapshot = await FirebaseFirestore.instance
           .collection('schede_assegnate')
           .where('atletaId', isEqualTo: user.uid)
-          .where('nome', isEqualTo: nomeScheda)
+          .where('id', isEqualTo: schedaId)
           .get();
 
       for (var doc in snapshot.docs) {
@@ -462,19 +468,35 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
     );
     final DateTime? localUpdatedAt = DateTime.tryParse(localUpdatedAtRaw ?? '');
 
-    List<Scheda> schedeCaricate = datiSalvati != null
-        ? (jsonDecode(datiSalvati) as List)
-              .map((e) => Scheda.fromJson(e))
-              .toList()
-        : [];
-    List<Allenamento> storicoCaricato = storicoSalvato != null
-        ? (jsonDecode(storicoSalvato) as List)
-              .map((e) => Allenamento.fromJson(e))
-              .toList()
-        : [];
-    List<String> cartelleCaricate = cartelleVuoteSalvate != null
-        ? List<String>.from(jsonDecode(cartelleVuoteSalvate))
-        : [];
+    List<Scheda> schedeCaricate = [];
+    List<Allenamento> storicoCaricato = [];
+    List<String> cartelleCaricate = [];
+
+    try {
+      if (datiSalvati != null) {
+        schedeCaricate = (jsonDecode(datiSalvati) as List)
+            .map((e) => Scheda.fromJson(e))
+            .toList();
+      }
+    } catch (_) {
+      await prefs.remove('schede_salvate');
+    }
+    try {
+      if (storicoSalvato != null) {
+        storicoCaricato = (jsonDecode(storicoSalvato) as List)
+            .map((e) => Allenamento.fromJson(e))
+            .toList();
+      }
+    } catch (_) {
+      await prefs.remove('storico_salvato');
+    }
+    try {
+      if (cartelleVuoteSalvate != null) {
+        cartelleCaricate = List<String>.from(jsonDecode(cartelleVuoteSalvate));
+      }
+    } catch (_) {
+      await prefs.remove(_cartelleVuoteKey);
+    }
     String zonaCaricata = zoneDolore.contains(zonaSalvata)
         ? zonaSalvata!
         : _zonaStretchingSelezionata;
@@ -488,10 +510,13 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       try {
-        final doc = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .get();
+        final userRef = FirebaseFirestore.instance.collection('users').doc(user.uid);
+        final results = await Future.wait([
+          userRef.get(),
+          userRef.collection('data').doc('schede').get(),
+        ]);
+        final doc = results[0];
+        final schedeDoc = results[1];
         final data = doc.data();
         final appState = data?['app_state'];
 
@@ -510,7 +535,8 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
                   (localUpdatedAt == null ||
                       cloudUpdatedAt.isAfter(localUpdatedAt)));
           if (shouldUseCloud) {
-            final cloudSchede = appState['schede_salvate'];
+            // Prefer dedicated schede document; fall back to inline (legacy data)
+            final cloudSchede = schedeDoc.data()?['schede_salvate'] ?? appState['schede_salvate'];
             final cloudStorico = appState['storico_salvato'];
             final cloudCartelle = appState['cartelle_vuote'];
             final cloudZona = appState['zona_stretching'];
@@ -609,16 +635,21 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
     }
 
     try {
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-        'app_state': {
+      final userRef = FirebaseFirestore.instance.collection('users').doc(user.uid);
+      await Future.wait([
+        userRef.set({
+          'app_state': {
+            'storico_salvato': storico.map((e) => e.toJson()).toList(),
+            'cartelle_vuote': cartelleVuote,
+            'zona_stretching': _zonaStretchingSelezionata,
+            'week_history_store': weekHistoryStore,
+            'updated_at': FieldValue.serverTimestamp(),
+          },
+        }, SetOptions(merge: true)),
+        userRef.collection('data').doc('schede').set({
           'schede_salvate': mieSchede.map((e) => e.toJson()).toList(),
-          'storico_salvato': storico.map((e) => e.toJson()).toList(),
-          'cartelle_vuote': cartelleVuote,
-          'zona_stretching': _zonaStretchingSelezionata,
-          'week_history_store': weekHistoryStore,
-          'updated_at': FieldValue.serverTimestamp(),
-        },
-      }, SetOptions(merge: true));
+        }),
+      ]);
     } catch (e) {
       debugPrint('Errore sync stato cloud: $e');
     }

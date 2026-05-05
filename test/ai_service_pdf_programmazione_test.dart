@@ -538,5 +538,44 @@ void main() {
         expect(resolved.schedeVisibili.first.id, isNot('single_week2'));
       },
     );
+
+    test(
+      'strict parsing mode keeps original intensity/volume and avoids synthetic weeks',
+      () {
+        final raw = [
+          {
+            'id': 'pdf_like_w1',
+            'nome': 'Week 1 - Seduta A',
+            'livello': 'Intermedio',
+            'categoria': 'Week 1',
+            'settimanaCorrente': 1,
+            'esercizi': [
+              {
+                'nome': 'Squat',
+                'workingSet': 1,
+                'ripetizioni': '1',
+                'tecniche': ['4x10', 'Classico'],
+                'modalitaIntensita': 'rir',
+                'rirTarget': '3',
+              },
+            ],
+          },
+        ];
+
+        final strictParsed = AiService.normalizeImportedSchedeForTest(
+          raw,
+          enrichSetRepFromTags: false,
+          synthesizeMissingWeeks: false,
+        );
+
+        expect(strictParsed.length, 1);
+        final exercise =
+            (strictParsed.first['esercizi'] as List).first as Map<String, dynamic>;
+        expect(exercise['workingSet'], 1);
+        expect(exercise['ripetizioni'], '1');
+        expect(exercise['modalitaIntensita'], 'rir');
+        expect(exercise['rirTarget'], '3');
+      },
+    );
   });
 }

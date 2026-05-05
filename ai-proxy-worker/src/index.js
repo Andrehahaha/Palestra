@@ -412,6 +412,64 @@ function asText(value, fallback = '') {
   return text || fallback;
 }
 
+function toSnakeCaseIdentifier(value) {
+  const text = asText(value, '');
+  if (!text) return '';
+
+  return text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toLowerCase();
+}
+
+function firstNonEmpty(values) {
+  for (const value of values) {
+    const text = asText(value, '');
+    if (text) return text;
+  }
+  return '';
+}
+
+function inferExerciseIdentity(rawExercise, defaults = {}) {
+  const directId = firstNonEmpty([
+    rawExercise?.id_es,
+    rawExercise?.idEs,
+    rawExercise?.exercise_id,
+    rawExercise?.exerciseId,
+    rawExercise?.id,
+    defaults?.id_es,
+    defaults?.idEs,
+    defaults?.exercise_id,
+    defaults?.exerciseId,
+    defaults?.id,
+  ]);
+
+  const displayName = firstNonEmpty([
+    rawExercise?.nome,
+    rawExercise?.exercise_name,
+    rawExercise?.exerciseName,
+    rawExercise?.exercise,
+    rawExercise?.name,
+    defaults?.nome,
+    defaults?.exercise_name,
+    defaults?.exerciseName,
+    defaults?.exercise,
+    defaults?.name,
+  ]);
+
+  let idEs = toSnakeCaseIdentifier(directId);
+  if (!idEs) {
+    idEs = toSnakeCaseIdentifier(displayName);
+  }
+
+  return {
+    idEs,
+    displayName: displayName || null,
+  };
+}
+
 function toIntMaybe(value, fallback = null) {
   if (value === undefined || value === null || value === '') return fallback;
   if (typeof value === 'number' && Number.isFinite(value)) return Math.trunc(value);
@@ -675,8 +733,8 @@ function buildSeriesFromLegacyFields(rawExercise, defaults = {}) {
 function normalizePlanExercise(rawExercise, defaults = {}) {
   if (!rawExercise || typeof rawExercise !== 'object') return null;
 
-  const defaultId = asText(defaults.id_es, '');
-  const id_es = asText(rawExercise.id_es, defaultId);
+  const identity = inferExerciseIdentity(rawExercise, defaults);
+  const id_es = identity.idEs;
   const statusRaw = asText(rawExercise.status, asText(defaults.status, 'active')).toLowerCase();
   const status = statusRaw === 'removed' ? 'removed' : 'active';
 
@@ -693,7 +751,11 @@ function normalizePlanExercise(rawExercise, defaults = {}) {
 
   const fallbackSeries = Array.isArray(defaults.serie) ? defaults.serie : [];
   const rawSeries = Array.isArray(rawExercise.serie) ? rawExercise.serie : undefined;
-  let serie = normalizePlanSeries(rawSeries, fallbackSeries);
+  // When the delta provides its own serie array, use it as a complete replacement
+  // (do NOT merge with baseline). The s field is a set-count, not an index, so
+  // merging would produce duplicate groups at the old percentage.
+  const seriesFallback = (rawSeries && rawSeries.length > 0) ? [] : fallbackSeries;
+  let serie = normalizePlanSeries(rawSeries, seriesFallback);
 
   if ((!Array.isArray(rawSeries) || rawSeries.length === 0) && serie.length === 0) {
     const synthesized = buildSeriesFromLegacyFields(rawExercise, defaults);
@@ -704,6 +766,7 @@ function normalizePlanExercise(rawExercise, defaults = {}) {
 
   return {
     id_es,
+    displayName: identity.displayName,
     status,
     serie,
     note: asText(rawExercise.note, asText(defaults.note, '')),
@@ -758,40 +821,27 @@ function looksLikeProgressionTableLabel(value) {
 function planExerciseToLegacyExercise(planExercise) {
   if (!planExercise || typeof planExercise !== 'object') return null;
 
+  const displayName = asText(
+    planExercise.displayName,
+    exerciseIdToDisplayName(planExercise.id_es),
+  );
+
   const series = Array.isArray(planExercise.serie)
-    ? planExercise.serie
-        .filter((row) => row && typeof row === 'object')
-        .sort((a, b) => toIntMaybe(a.s, 0) - toIntMaybe(b.s, 0))
+    ? planExercise.serie.filter((row) => row && typeof row === 'object')
     : [];
 
-  const normalizedSeries = series.length > 0 ? series : [{ s: 1, r: '8-10', kg: null, rest: '90' }];
-  const seriesByIndex = new Map();
-  for (let idx = 0; idx < normalizedSeries.length; idx += 1) {
-    const row = normalizedSeries[idx];
-    const setIndex = Math.max(1, toIntMaybe(row?.s, idx + 1));
-    if (!seriesByIndex.has(setIndex)) {
-      seriesByIndex.set(setIndex, row);
+  // s = numero di serie (count), not a set index. Each entry is a group of identical sets.
+  // Expand groups into individual sets, preserving group order.
+  const rawGroups = series.length > 0 ? series : [{ s: 1, r: '8-10', kg: null, rest: '90' }];
+  const expandedSeries = [];
+  for (const group of rawGroups) {
+    const count = Math.max(1, toIntMaybe(group?.s, 1));
+    for (let i = 0; i < count; i++) {
+      expandedSeries.push(group);
     }
   }
 
-  const firstSet = seriesByIndex.get(1) || normalizedSeries[0] || { s: 1, r: '8-10', kg: null, rest: '90' };
-  const progressionHint = hasProgressionTableHint(
-    planExercise.note,
-    planExercise.metodo,
-    planExercise.tecniche,
-    firstSet.r,
-  );
-
-  const firstSetHint = extractSetRepHintFromText(firstSet.r);
-  const noteHint = extractSetRepHintFromText(planExercise.note);
-  const metodoHint = extractSetRepHintFromText(planExercise.metodo);
-  const tecnicheHints = Array.isArray(planExercise.tecniche)
-    ? planExercise.tecniche.map((t) => extractSetRepHintFromText(t))
-    : [];
-
-  const hintedWorkingSet = [firstSetHint, noteHint, metodoHint, ...tecnicheHints]
-    .map((hint) => hint?.sets)
-    .find((value) => Number.isFinite(value) && value > 0) || null;
+  const firstSet = expandedSeries[0] || { s: 1, r: '8-10', kg: null, rest: '90' };
 
   const kgFromFirst = toNullableNumber(firstSet.kg);
   const percentFromKg = extractPercentFromKgValue(firstSet.kg);
@@ -809,46 +859,19 @@ function planExerciseToLegacyExercise(planExercise) {
     : [asText(planExercise.metodo, 'Classico')];
   const tecniche = sanitizeTechniqueLabels(rawTecniche);
 
-  const maxSetIndex = normalizedSeries.reduce(
-    (max, row, idx) => Math.max(max, Math.max(1, toIntMaybe(row?.s, idx + 1))),
-    0,
-  );
-  let workingSet = Math.max(normalizedSeries.length, maxSetIndex, hintedWorkingSet || 0, 1);
-  if (progressionHint && workingSet <= 1) {
-    workingSet = 3;
-  }
+  const workingSet = expandedSeries.length;
 
-  let ripetizioni = asText(firstSetHint.reps || firstSet.r, '8-10');
-  const contextRepHint = [noteHint, metodoHint, ...tecnicheHints]
-    .map((hint) => hint?.reps)
-    .find((value) => asText(value, '') && asText(value, '') !== '1') || null;
-
-  if (looksLikeProgressionTableLabel(ripetizioni)) {
-    ripetizioni = 'Guarda tabella progressione';
-  }
-  const repsCompact = asText(ripetizioni, '').toLowerCase().replace(/\s+/g, '');
-  const looksSinglePlaceholder =
-    repsCompact === ''
-    || repsCompact === '1'
-    || repsCompact === '1rep'
-    || repsCompact === '1reps'
-    || repsCompact === 'x1'
-    || repsCompact === '1x1';
-
-  if (looksSinglePlaceholder && contextRepHint) {
-    ripetizioni = contextRepHint;
-  }
-
-  if (progressionHint && looksSinglePlaceholder) {
-    ripetizioni = 'Guarda tabella progressione';
+  let ripetizioni = asText(firstSet.r, '8-10');
+  if (!ripetizioni) {
+    ripetizioni = '8-10';
   }
 
   const seriesForLegacy = [];
   const defaultRest = asText(firstSet.rest, '90');
-  const defaultRepValue = isSimpleRepText(ripetizioni) ? ripetizioni : asText(firstSet.r, '');
+  const defaultRepValue = asText(firstSet.r, '');
 
   for (let setNumber = 1; setNumber <= workingSet; setNumber += 1) {
-    const source = seriesByIndex.get(setNumber) || {};
+    const source = expandedSeries[setNumber - 1];
     const repValue = asText(source.r, '') || defaultRepValue;
     seriesForLegacy.push({
       s: setNumber,
@@ -879,7 +902,7 @@ function planExerciseToLegacyExercise(planExercise) {
   if (noteRaw) noteParts.push(noteRaw);
 
   return {
-    nome: exerciseIdToDisplayName(planExercise.id_es),
+    nome: displayName || 'Esercizio',
     avvicinamento: 0,
     workingSet,
     ripetizioni,
@@ -1021,7 +1044,6 @@ function convertSchedaAllenamentiDeltaToItems(parsedRoot) {
 
     const idAllenamento = asText(allenamento.id_allenamento, String.fromCharCode(65 + (sessionIndex % 26)));
     const titolo = asText(allenamento.titolo, `Allenamento ${idAllenamento}`);
-    const desiredWeekCount = resolveDesiredWeekCount(parsedRoot, allenamento, 14);
     const weeksRaw = allenamento.weeks;
 
     if (!weeksRaw || typeof weeksRaw !== 'object' || Array.isArray(weeksRaw)) {
@@ -1053,22 +1075,8 @@ function convertSchedaAllenamentiDeltaToItems(parsedRoot) {
       (max, key) => Math.max(max, parseWeekNumberFromKey(key, 0)),
       0,
     );
-    const targetWeekCount = Math.max(
-      desiredWeekCount,
-      maxExistingWeekNumber,
-      baselineWeekNumber,
-    );
-
-    if (targetWeekCount > maxExistingWeekNumber) {
-      for (let week = baselineWeekNumber + 1; week <= targetWeekCount; week += 1) {
-        const key = `w${week}`;
-        if (Array.isArray(weekMap[key])) continue;
-        weekMap[key] = buildAutoProgressionDeltas(
-          baselineExercises,
-          week - baselineWeekNumber,
-        );
-      }
-      weekKeys = sortWeekKeys(weekMap);
+    if (maxExistingWeekNumber <= 0) {
+      return { items: null, error: `allenamento ${idAllenamento}: nessuna week valida` };
     }
 
     for (const weekKey of weekKeys) {
@@ -1579,69 +1587,73 @@ ${limitedInput}`;
 
 function buildAnalyzePrompt(nomiUfficiali, sourceType = 'documento') {
   return `Sei un coach tecnico specializzato in programmazione forza/ipertrofia.
-Analizza questo ${sourceType} e restituisci ESCLUSIVAMENTE JSON formattato con questa gerarchia:
+Analizza questo ${sourceType} e restituisci ESCLUSIVAMENTE JSON valido, senza testo fuori dal JSON.
 
-Scheda > Allenamento > Week > Esercizio > Serie
-
-SCHEMA ROOT OBBLIGATORIO:
+ESEMPIO COMPLETO (2 allenamenti x 3 settimane — il principio scala a N allenamenti x M settimane):
 {
-  "scheda_id": "ipertrofia_pro_01",
-  "nome_scheda": "Meso di Volume",
+  "scheda_id": "forza_base",
+  "nome_scheda": "Forza Base",
   "allenamenti": [
     {
       "id_allenamento": "A",
       "titolo": "Upper Push",
       "weeks": {
-        "w1": [ ... ],
-        "w2": [ ... ],
-        "w3": [ ... ],
-        "w4": [ ... ],
-        "w5": [ ... ],
-        "w14": [ ... ]
+        "w1": [
+          {"id_es": "squat", "serie": [{"s": 4, "r": "6", "kg": "70%"}]},
+          {"id_es": "panca_piana_con_bilanciere_presa_media", "serie": [{"s": 5, "r": "5", "kg": "75%"}]},
+          {"id_es": "curl_con_bilanciere", "serie": [{"s": 3, "r": "8"}]}
+        ],
+        "w2": [
+          {"id_es": "squat", "serie": [{"s": 5, "r": "5", "kg": "75%"}]},
+          {"id_es": "panca_piana_con_bilanciere_presa_media", "serie": [{"s": 5, "r": "5", "kg": "80%"}]}
+        ],
+        "w3": []
+      }
+    },
+    {
+      "id_allenamento": "B",
+      "titolo": "Lower Body",
+      "weeks": {
+        "w1": [
+          {"id_es": "stacco_da_terra_con_bilanciere", "serie": [{"s": 4, "r": "5", "kg": "80%"}]},
+          {"id_es": "affondi_bulgaro_con_manubri", "serie": [{"s": 3, "r": "8"}]}
+        ],
+        "w2": [
+          {"id_es": "stacco_da_terra_con_bilanciere", "serie": [{"s": 4, "r": "4", "kg": "85%"}]}
+        ],
+        "w3": []
       }
     }
   ]
 }
 
-SCHEMA ESERCIZIO:
-{
-  "id_es": "chest_press",
-  "status": "active",
-  "serie": [
-    { "s": 1, "r": "10", "kg": "50", "rest": "90" }
-  ]
-}
+LEGENDA DELL'ESEMPIO (leggere con attenzione):
+- L'array "allenamenti" contiene TUTTI i giorni: nell'esempio ci sono 2, ma se il documento ne ha 3 devono esserci 3 elementi. NON fermarti al primo.
+- "w1" e la BASELINE: contiene tutti gli esercizi con serie complete.
+- "w2".."wN" sono DELTA: contengono SOLO gli esercizi con valori DIVERSI da w1. Nell'esempio w2 di A omette curl_con_bilanciere perche e invariato.
+- "w3" e [] perche tutti gli esercizi sono identici a w1. Anche le week vuote vanno incluse: non saltare mai una week.
+- Il formato delta e essenziale: riduce drasticamente l'output e permette di includere TUTTE le sedute e TUTTE le settimane senza superare i limiti.
 
-REGOLE ID ESERCIZIO:
-- Usa solo "id_es" in snake_case (minuscolo, underscore).
-- Deriva "id_es" dal nome esercizio ufficiale piu vicino disponibile.
-- Se l'esercizio non esiste in lista, usa una variante standard coerente in snake_case.
+REGOLA CHIAVE: se il documento ha 3 giorni x 14 settimane, l'output deve avere 3 elementi in "allenamenti", ognuno con w1..w14. Usa il delta per mantenere l'output compatto.
 
-LISTA ESERCIZI UFFICIALI:
+LISTA ESERCIZI UFFICIALI (usa id_es in snake_case da questa lista):
 ${JSON.stringify(nomiUfficiali)}
 
-REGOLE WEEK (OBBLIGATORIE):
-- Determina il numero settimane N dal documento e crea ESATTAMENTE le week w1..wN (senza saltare week).
-- Se N non e esplicitato nel documento, usa default N=14 (w1..w14).
-- Ogni week deve avere esercizi con serie esplicite: in ogni oggetto "serie" inserisci sempre almeno "s" e "r".
-- Se presenti, aggiungi anche "kg" e "rest".
-- Evita week vuote: ogni week deve rappresentare una seduta realmente compilata.
-- Se un esercizio viene sostituito, inserisci il nuovo "id_es" (facoltativo: "old_id_es" per chiarire il rimpiazzo).
-- Se un esercizio va rimosso in una week, usa: { "id_es": "...", "status": "removed" }.
+CAMPI ESERCIZIO OPZIONALI (aggiungi solo se presenti nel documento):
+- "modalitaIntensita": "rir" o "percentuale"
+- "rirTarget": target RIR come stringa (es. "2")
+- "percentualeMassimale": % del massimale come numero (es. 75)
+- "massimaleKg": massimale in kg come numero (es. 100)
+- "note": note testuali sull'esercizio (NON includere qui info su RIR o tecniche — usare i campi dedicati)
+- "status": "removed" se l'esercizio viene rimosso in quella week
+- "tecniche": array di tecniche rilevate nel documento. Valori ammessi: ["Superset", "Stripping", "Drop Set", "Rest Pause", "Monopodalico", "Piramidale", "Back off", "Giant Set", "Cluster Set", "Top Set", "Feeder Set", "Warm Up", "Myo-reps", "AMRAP", "Negative", "Isometria", "Trisets", "Pre-stancaggio", "EMOM", "Burnouts"]. Ometti il campo se nessuna tecnica è indicata (non usare "Classico").
 
-REGOLE PROGRESSIONE AUTOMATICA:
-- Se il PDF NON specifica cambi tra settimane, completa le week fino a N con progressione logica:
-  - preferisci +2.5% carico su esercizi con kg numerico
-  - altrimenti +1 rep
-- Se il documento contiene una tabella progressione, TRASCRIVI i valori week-by-week (serie/ripetizioni/carichi) nelle week corrette.
-- Non usare etichette placeholder come "Guarda tabella progressione" se i valori week sono leggibili dal documento.
+CAMPI SERIE: {"s": numero_serie, "r": "reps", "kg": "carico", "rest": "secondi_recupero"}
+Includi solo i campi presenti nel documento. "s" e obbligatorio, gli altri sono opzionali.
 
-REGOLE TECNICHE:
-- Mantieni output compatto: niente testo superfluo.
-- NON inserire schema serie/ripetizioni (es. "4x10", "3 serie") nei campi tecniche/metodo/tag.
-- Serie e reps devono stare nei campi strutturati nell'array "serie".
-- Non usare markdown, commenti, separatori, backticks o testo fuori dal JSON.
-- Restituisci solo JSON valido.`;
+NOME PROGRAMMA: usa il nome reale del documento. NON usare valori di esempio come "Forza Base".
+
+PROGRESSIONE: trascrivi i valori dal documento solo se leggibili. Non inventare valori numerici assenti.`;
 }
 
 function buildReviewPrompt(nomeCartella, schede) {
@@ -1658,6 +1670,145 @@ Struttura la risposta in questo modo usando le emoji:
 💡 Consiglio del Coach
 
 Rispondi in italiano. Non usare codice.`;
+}
+
+function buildDiscoveryPrompt(sourceType = 'documento') {
+  return `Sei un coach tecnico. Analizza questo ${sourceType}.
+Restituisci ESCLUSIVAMENTE questo JSON (nessun testo fuori dal JSON):
+{
+  "nome_scheda": "nome esatto del programma",
+  "scheda_id": "nome_in_snake_case",
+  "numero_settimane": 14,
+  "allenamenti": [
+    {"id_allenamento": "A", "titolo": "titolo seduta A"},
+    {"id_allenamento": "B", "titolo": "titolo seduta B"},
+    {"id_allenamento": "C", "titolo": "titolo seduta C"}
+  ]
+}
+
+REGOLE:
+- numero_settimane: numero totale di settimane del programma
+- allenamenti: TUTTI i giorni/sedute del programma, nell'ordine in cui appaiono
+- Non includere esercizi, solo i metadati`;
+}
+
+function buildSessionWeeksPrompt(nomiUfficiali, sourceType, sessionId, sessionTitle, numeroSettimane) {
+  return `Sei un coach tecnico specializzato in programmazione forza/ipertrofia.
+Analizza questo ${sourceType} e restituisci ESCLUSIVAMENTE JSON valido.
+
+Estrai SOLO la seduta "${sessionId}" - "${sessionTitle}" con TUTTE le ${numeroSettimane} settimane.
+
+FORMATO OUTPUT:
+{
+  "id_allenamento": "${sessionId}",
+  "titolo": "${sessionTitle}",
+  "weeks": {
+    "w1": [
+      {"id_es": "squat", "serie": [{"s": 4, "r": "6", "kg": "70%"}]},
+      {"id_es": "panca_piana_con_bilanciere_presa_media", "serie": [{"s": 5, "r": "5", "kg": "75%"}]}
+    ],
+    "w2": [
+      {"id_es": "squat", "serie": [{"s": 5, "r": "5", "kg": "75%"}]}
+    ],
+    "w3": [],
+    "w4": [],
+    "w${numeroSettimane}": []
+  }
+}
+
+REGOLE DELTA:
+- "w1" e la BASELINE: contiene tutti gli esercizi con serie complete
+- "w2".."w${numeroSettimane}" sono DELTA: contengono SOLO gli esercizi con valori DIVERSI da w1
+- Se una week e identica a w1, scrivi []
+- Includi TUTTE le week da w1 a w${numeroSettimane}, nessuna esclusa
+
+LISTA ESERCIZI UFFICIALI (usa id_es da questa lista in snake_case):
+${JSON.stringify(nomiUfficiali)}
+
+CAMPI OPZIONALI (aggiungi solo se presenti nel documento):
+- "modalitaIntensita": "rir" o "percentuale"
+- "rirTarget": target RIR come stringa (es. "2")
+- "percentualeMassimale": % del massimale come numero (es. 75)
+- "note": note testuali sull'esercizio (NON includere qui info su RIR o tecniche — usare i campi dedicati)
+- "tecniche": array di tecniche rilevate nel documento. Valori ammessi: ["Superset", "Stripping", "Drop Set", "Rest Pause", "Monopodalico", "Piramidale", "Back off", "Giant Set", "Cluster Set", "Top Set", "Feeder Set", "Warm Up", "Myo-reps", "AMRAP", "Negative", "Isometria", "Trisets", "Pre-stancaggio", "EMOM", "Burnouts"]. Ometti il campo se nessuna tecnica è indicata (non usare "Classico").`;
+}
+
+async function extractSchedaMultiCall(apiKey, nomiUfficiali, encodedData, mimeType, sourceType) {
+  // Phase 1: scopri sedute e numero settimane
+  const discoveryResp = await callGemini(apiKey, {
+    contents: [{
+      role: 'user',
+      parts: [
+        { text: buildDiscoveryPrompt(sourceType) },
+        { inline_data: { mime_type: mimeType, data: encodedData } },
+      ],
+    }],
+    generationConfig: {
+      responseMimeType: 'application/json',
+      temperature: 0,
+      maxOutputTokens: 512,
+    },
+  });
+
+  const discoveryRaw = extractModelText(discoveryResp);
+  const discovery = JSON.parse(extractJsonPayload(discoveryRaw));
+
+  const allenamenti = Array.isArray(discovery.allenamenti) ? discovery.allenamenti : [];
+  const rawWeeks = Number.parseInt(String(discovery.numero_settimane || ''), 10);
+  const numeroSettimane = Number.isFinite(rawWeeks) && rawWeeks > 0 ? Math.min(rawWeeks, 20) : 14;
+
+  if (allenamenti.length === 0) {
+    throw new Error('Multi-call discovery: nessuna seduta trovata');
+  }
+
+  // Phase 2: estrai ogni seduta con tutte le week (in parallelo)
+  const sessionPromises = allenamenti.map(async (session) => {
+    const sessionId = asText(session.id_allenamento, 'A');
+    const sessionTitle = asText(session.titolo, `Seduta ${sessionId}`);
+
+    const sessionResp = await callGemini(apiKey, {
+      contents: [{
+        role: 'user',
+        parts: [
+          { text: buildSessionWeeksPrompt(nomiUfficiali, sourceType, sessionId, sessionTitle, numeroSettimane) },
+          { inline_data: { mime_type: mimeType, data: encodedData } },
+        ],
+      }],
+      generationConfig: {
+        responseMimeType: 'application/json',
+        temperature: 0,
+        maxOutputTokens: 8192,
+      },
+    });
+
+    const sessionRaw = extractModelText(sessionResp);
+    const sessionData = JSON.parse(extractJsonPayload(sessionRaw));
+
+    return {
+      id_allenamento: asText(sessionData.id_allenamento, sessionId),
+      titolo: asText(sessionData.titolo, sessionTitle),
+      weeks: (sessionData.weeks && typeof sessionData.weeks === 'object' && !Array.isArray(sessionData.weeks))
+        ? sessionData.weeks
+        : {},
+    };
+  });
+
+  const sessionResults = await Promise.allSettled(sessionPromises);
+  const fullAllenamenti = sessionResults
+    .filter((r) => r.status === 'fulfilled')
+    .map((r) => r.value)
+    .filter((a) => a.weeks && Object.keys(a.weeks).length > 0);
+
+  if (fullAllenamenti.length === 0) {
+    throw new Error('Multi-call: nessuna seduta estratta con successo');
+  }
+
+  const nomeScheda = asText(discovery.nome_scheda, 'Scheda Importata');
+  return {
+    scheda_id: asText(discovery.scheda_id, '') || toSnakeCaseIdentifier(nomeScheda) || 'scheda_importata',
+    nome_scheda: nomeScheda,
+    allenamenti: fullAllenamenti,
+  };
 }
 
 async function handleAnalyzeDocument(request, env, { payloadField, mimeType, sourceType }) {
@@ -1695,6 +1846,8 @@ async function handleAnalyzeDocument(request, env, { payloadField, mimeType, sou
     ? `${prompt}\n\nVINCOLO PRESTAZIONI: privilegia risposta compatta e veloce mantenendo il JSON valido completo.\nVINCOLO COPERTURA: includi tutti gli allenamenti e tutte le settimane necessarie (w1..wN).\nVINCOLO WEEK COMPLETE: per ogni week inserisci serie con s e r esplicite per ogni esercizio.\nVINCOLO COMPATTEZZA: evita campi ridondanti ma non omettere reps/serie delle week.`
     : prompt;
 
+  const maxOutputTokens = fastMode ? 4096 : 16384;
+
   const requestWithSchema = {
     contents: [
       {
@@ -1709,7 +1862,7 @@ async function handleAnalyzeDocument(request, env, { payloadField, mimeType, sou
       responseMimeType: 'application/json',
       responseSchema: WORKOUT_RESPONSE_SCHEMA,
       temperature: 0,
-      maxOutputTokens: fastMode ? 2600 : 6144,
+      maxOutputTokens,
     },
   };
 
@@ -1718,7 +1871,7 @@ async function handleAnalyzeDocument(request, env, { payloadField, mimeType, sou
     generationConfig: {
       responseMimeType: 'application/json',
       temperature: 0,
-      maxOutputTokens: fastMode ? 2600 : 6144,
+      maxOutputTokens,
     },
   };
 
@@ -1760,6 +1913,14 @@ async function handleAnalyzeDocument(request, env, { payloadField, mimeType, sou
   }
 
   let parsed = parseItemsArray(jsonPayload);
+  let recoveredViaFallback = false;
+  let recoveryStep = null;
+
+  const markRecoveredVia = (stepName) => {
+    recoveredViaFallback = true;
+    recoveryStep = stepName;
+  };
+
   if (debug) {
     debug.parseSteps.push({
       step: 'parse-extracted-payload',
@@ -1772,6 +1933,9 @@ async function handleAnalyzeDocument(request, env, { payloadField, mimeType, sou
   if (!parsed.items) {
     const likelyArray = extractLikelyArrayPayload(jsonPayload);
     parsed = parseItemsArray(likelyArray);
+    if (parsed.items) {
+      markRecoveredVia('parse-likely-array-slice');
+    }
     if (debug) {
       debug.likelyArrayPreview = cut(likelyArray, 3000);
       debug.parseSteps.push({
@@ -1786,6 +1950,9 @@ async function handleAnalyzeDocument(request, env, { payloadField, mimeType, sou
   if (!parsed.items) {
     const autoClosed = autoCloseTruncatedJsonArray(jsonPayload);
     parsed = parseItemsArray(autoClosed);
+    if (parsed.items) {
+      markRecoveredVia('parse-auto-closed-payload');
+    }
     if (debug) {
       debug.autoClosedPreview = cut(autoClosed, 3000);
       debug.parseSteps.push({
@@ -1800,6 +1967,9 @@ async function handleAnalyzeDocument(request, env, { payloadField, mimeType, sou
   if (!parsed.items) {
     const truncated = truncateToLastCompleteArrayElement(jsonPayload);
     parsed = parseItemsArray(truncated);
+    if (parsed.items) {
+      markRecoveredVia('parse-truncated-last-complete-item');
+    }
     if (debug) {
       debug.truncatedPreview = cut(truncated, 3000);
       debug.parseSteps.push({
@@ -1821,6 +1991,9 @@ async function handleAnalyzeDocument(request, env, { payloadField, mimeType, sou
         debug.repairedPayloadPreview = cut(repairedPayload, 3000);
       }
       parsed = parseItemsArray(repairedPayload);
+      if (parsed.items) {
+        markRecoveredVia('parse-repaired-payload');
+      }
       if (debug) {
         debug.parseSteps.push({
           step: 'parse-repaired-payload',
@@ -1832,6 +2005,9 @@ async function handleAnalyzeDocument(request, env, { payloadField, mimeType, sou
       if (!parsed.items) {
         const likelyArray = extractLikelyArrayPayload(repairedPayload);
         parsed = parseItemsArray(likelyArray);
+        if (parsed.items) {
+          markRecoveredVia('parse-repaired-likely-array-slice');
+        }
         if (debug) {
           debug.repairedLikelyArrayPreview = cut(likelyArray, 3000);
           debug.parseSteps.push({
@@ -1859,15 +2035,56 @@ async function handleAnalyzeDocument(request, env, { payloadField, mimeType, sou
     });
   }
 
-  const likelyCutByModel = finishReasonUpper.includes('MAX_TOKENS');
+  // Multi-call fallback: se tutte le sessioni hanno <= 1 week, riprova estraendo ogni seduta separatamente
+  let multiCallFixedTruncation = false;
+  if (sourceType === 'PDF' && encodedData) {
+    const plan = parsed.structuredPlan;
+    const planSessions = Array.isArray(plan?.allenamenti) ? plan.allenamenti : [];
+    const planWeekCount = planSessions.length > 0
+      ? Math.max(...planSessions.map((a) => Object.keys(a.weeks || {}).length))
+      : 0;
+    const seemsIncomplete = !parsed.items || planSessions.length === 0 || planWeekCount <= 1;
 
-  if (sourceType === 'PDF' && likelyCutByModel) {
+    if (seemsIncomplete) {
+      if (debug) debug.multiCallAttempted = true;
+      try {
+        const multiCallResult = await extractSchedaMultiCall(
+          env.GEMINI_API_KEY, nomiUfficiali, encodedData, mimeType, sourceType,
+        );
+        const multiConverted = convertSchedaAllenamentiDeltaToItems(multiCallResult);
+        if (multiConverted.items && multiConverted.items.length > 0) {
+          parsed = {
+            items: multiConverted.items,
+            structuredPlan: multiCallResult,
+            error: null,
+            format: 'scheda-allenamenti-delta',
+          };
+          recoveredViaFallback = false;
+          multiCallFixedTruncation = true;
+          if (debug) debug.multiCallUsed = true;
+        }
+      } catch (multiCallError) {
+        if (debug) debug.multiCallError = formatErrorForDetails(multiCallError);
+      }
+    }
+  }
+
+  const likelyCutByModel = !multiCallFixedTruncation && finishReasonUpper.includes('MAX_TOKENS');
+  const likelyIncompleteFromRecovery = recoveredViaFallback;
+
+  if (sourceType === 'PDF' && (likelyCutByModel || likelyIncompleteFromRecovery)) {
     if (debug) {
       debug.truncatedGuardTriggered = true;
+      debug.truncatedGuardReason = likelyCutByModel
+        ? 'finishReason=MAX_TOKENS'
+        : `recovered-via:${recoveryStep || 'unknown'}`;
+      debug.recoveryStep = recoveryStep;
     }
     return json(422, {
       error: 'Risposta AI troncata',
-      details: `Output potenzialmente incompleto (${firstCandidate?.finishReason}). Possibile perdita di week/sedute.`,
+      details: likelyCutByModel
+        ? `Output potenzialmente incompleto (${firstCandidate?.finishReason}). Possibile perdita di week/sedute/esercizi.`
+        : `Output recuperato via fallback (${recoveryStep || 'unknown'}) e potenzialmente incompleto. Possibile perdita di week/sedute/esercizi.`,
       ...(debug ? { debugJsonRead: debug } : {}),
     });
   }
@@ -1875,24 +2092,15 @@ async function handleAnalyzeDocument(request, env, { payloadField, mimeType, sou
   if (debug) {
     debug.parsedFormat = parsed.format || null;
     debug.itemCount = parsed.items.length;
-    const first = parsed.items[0];
-    if (first && typeof first === 'object') {
-      const firstExercise = Array.isArray(first.esercizi) && first.esercizi.length > 0
-        ? first.esercizi[0]
-        : null;
-      debug.firstItemSummary = {
-        nome: first.nome || null,
-        categoria: first.categoria || null,
-        settimanaCorrente: first.settimanaCorrente || null,
-        firstExercise: firstExercise
-          ? {
-              nome: firstExercise.nome || null,
-              workingSet: firstExercise.workingSet || null,
-              ripetizioni: firstExercise.ripetizioni || null,
-            }
-          : null,
-      };
-    }
+    debug.allItemsSummary = parsed.items.map((item) => ({
+      nome: item.nome || null,
+      categoria: item.categoria || null,
+      settimana: item.settimanaCorrente || null,
+      nEsercizi: Array.isArray(item.esercizi) ? item.esercizi.length : 0,
+      esercizi: Array.isArray(item.esercizi)
+        ? item.esercizi.map((e) => e.nome || e.id_es || '?')
+        : [],
+    }));
   }
 
   return json(200, {
