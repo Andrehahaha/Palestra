@@ -32,8 +32,18 @@ class _ProfiloScreenState extends State<ProfiloScreen> {
   final TextEditingController _nomeUtenteController = TextEditingController();
   final TextEditingController _pesoController = TextEditingController();
   final TextEditingController _altezzaController = TextEditingController();
-  final TextEditingController _misureController = TextEditingController();
+  final TextEditingController _misureController = TextEditingController(); // kept for legacy migration
   final TextEditingController _noteExtraController = TextEditingController();
+  // Misure per distretto
+  final TextEditingController _pettoCtrll = TextEditingController();
+  final TextEditingController _vitaCtrll = TextEditingController();
+  final TextEditingController _fianchiCtrll = TextEditingController();
+  final TextEditingController _spalleCtrll = TextEditingController();
+  final TextEditingController _braccioDxCtrll = TextEditingController();
+  final TextEditingController _braccioSxCtrll = TextEditingController();
+  final TextEditingController _cosciaDxCtrll = TextEditingController();
+  final TextEditingController _cosciaSxCtrll = TextEditingController();
+  final TextEditingController _polpaccioCtrll = TextEditingController();
   List<Allenamento> storico = [];
   List<String> nomiEserciziGrafico = [];
   List<Map<String, String>> eserciziCustom = [];
@@ -363,6 +373,15 @@ class _ProfiloScreenState extends State<ProfiloScreen> {
       _altezzaController.text = dati['altezza'] ?? '';
       _misureController.text = dati['misure'] ?? '';
       _noteExtraController.text = dati['note'] ?? '';
+      _pettoCtrll.text = dati['petto'] ?? '';
+      _vitaCtrll.text = dati['vita'] ?? '';
+      _fianchiCtrll.text = dati['fianchi'] ?? '';
+      _spalleCtrll.text = dati['spalle'] ?? '';
+      _braccioDxCtrll.text = dati['braccio_dx'] ?? '';
+      _braccioSxCtrll.text = dati['braccio_sx'] ?? '';
+      _cosciaDxCtrll.text = dati['coscia_dx'] ?? '';
+      _cosciaSxCtrll.text = dati['coscia_sx'] ?? '';
+      _polpaccioCtrll.text = dati['polpaccio'] ?? '';
     } else {
       final String? notevecchie = prefs.getString('note_generali');
       if (notevecchie != null) _noteExtraController.text = notevecchie;
@@ -599,6 +618,15 @@ class _ProfiloScreenState extends State<ProfiloScreen> {
       'altezza': _altezzaController.text.trim(),
       'misure': _misureController.text.trim(),
       'note': _noteExtraController.text.trim(),
+      'petto': _pettoCtrll.text.trim(),
+      'vita': _vitaCtrll.text.trim(),
+      'fianchi': _fianchiCtrll.text.trim(),
+      'spalle': _spalleCtrll.text.trim(),
+      'braccio_dx': _braccioDxCtrll.text.trim(),
+      'braccio_sx': _braccioSxCtrll.text.trim(),
+      'coscia_dx': _cosciaDxCtrll.text.trim(),
+      'coscia_sx': _cosciaSxCtrll.text.trim(),
+      'polpaccio': _polpaccioCtrll.text.trim(),
     };
 
     await prefs.setString('profilo_dati_utente', jsonEncode(datiPersonali));
@@ -1217,106 +1245,279 @@ class _ProfiloScreenState extends State<ProfiloScreen> {
   }
 
   Widget _buildDatiTab() {
+    const orange = Color(0xFFFF6B1A);
+    const surface = Color(0xFF141414);
+    const surfaceAlt = Color(0xFF1E1E1E);
+
+    Widget sectionLabel(String text, IconData icon, Color color) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 20, bottom: 10),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, color: color, size: 16),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              text,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                color: Colors.white,
+                letterSpacing: 1.5,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    Widget measureField(String label, TextEditingController ctrl, {bool isNumber = true}) {
+      return TextField(
+        controller: ctrl,
+        keyboardType: isNumber ? const TextInputType.numberWithOptions(decimal: true) : TextInputType.text,
+        style: const TextStyle(color: Colors.white),
+        decoration: InputDecoration(
+          labelText: label,
+          labelStyle: const TextStyle(color: Color(0xFF888888), fontSize: 13),
+          suffixText: isNumber ? 'cm' : null,
+          suffixStyle: const TextStyle(color: Color(0xFF555555)),
+          filled: true,
+          fillColor: surfaceAlt,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: orange, width: 1.5),
+          ),
+        ),
+      );
+    }
+
+    Widget row2(Widget a, Widget b) => Row(
+          children: [
+            Expanded(child: a),
+            const SizedBox(width: 12),
+            Expanded(child: b),
+          ],
+        );
+
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16.0),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Row(
-            children: [
-              Icon(Icons.assignment_ind, color: Color(0xFFFF6B1A)),
-              SizedBox(width: 8),
-              Text(
-                'I Tuoi Dati Fisici',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          TextField(
-            controller: _nomeUtenteController,
-            decoration: const InputDecoration(
-              labelText: 'Il tuo Nome',
-              prefixIcon: Icon(Icons.person),
-              border: OutlineInputBorder(),
+          // ── Dati generali ──────────────────────────────────
+          sectionLabel('DATI GENERALI', Icons.person_rounded, orange),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
             ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _pesoController,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: 'Peso Corporeo (kg)',
-                    prefixIcon: Icon(Icons.monitor_weight),
-                    border: OutlineInputBorder(),
+            child: Column(
+              children: [
+                measureField('Nome', _nomeUtenteController, isNumber: false),
+                const SizedBox(height: 12),
+                row2(
+                  TextField(
+                    controller: _pesoController,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      labelText: 'Peso',
+                      labelStyle: const TextStyle(color: Color(0xFF888888), fontSize: 13),
+                      suffixText: 'kg',
+                      suffixStyle: const TextStyle(color: Color(0xFF555555)),
+                      filled: true,
+                      fillColor: surfaceAlt,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
+                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
+                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: orange, width: 1.5)),
+                    ),
+                  ),
+                  TextField(
+                    controller: _altezzaController,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      labelText: 'Altezza',
+                      labelStyle: const TextStyle(color: Color(0xFF888888), fontSize: 13),
+                      suffixText: 'cm',
+                      suffixStyle: const TextStyle(color: Color(0xFF555555)),
+                      filled: true,
+                      fillColor: surfaceAlt,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
+                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
+                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: orange, width: 1.5)),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: TextField(
-                  controller: _altezzaController,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: 'Altezza (cm)',
-                    prefixIcon: Icon(Icons.height),
-                    border: OutlineInputBorder(),
-                  ),
+              ],
+            ),
+          ),
+
+          // ── Torso ─────────────────────────────────────────
+          sectionLabel('TORSO', Icons.straighten, const Color(0xFF4A90D9)),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            ),
+            child: Column(
+              children: [
+                row2(
+                  measureField('Petto', _pettoCtrll),
+                  measureField('Vita', _vitaCtrll),
                 ),
+                const SizedBox(height: 12),
+                row2(
+                  measureField('Fianchi', _fianchiCtrll),
+                  measureField('Spalle', _spalleCtrll),
+                ),
+              ],
+            ),
+          ),
+
+          // ── Braccia ───────────────────────────────────────
+          sectionLabel('BRACCIA', Icons.fitness_center, const Color(0xFFFF6B1A)),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            ),
+            child: row2(
+              measureField('Braccio dx', _braccioDxCtrll),
+              measureField('Braccio sx', _braccioSxCtrll),
+            ),
+          ),
+
+          // ── Gambe ─────────────────────────────────────────
+          sectionLabel('GAMBE', Icons.directions_run, const Color(0xFF4CAF50)),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            ),
+            child: Column(
+              children: [
+                row2(
+                  measureField('Coscia dx', _cosciaDxCtrll),
+                  measureField('Coscia sx', _cosciaSxCtrll),
+                ),
+                const SizedBox(height: 12),
+                measureField('Polpaccio', _polpaccioCtrll),
+              ],
+            ),
+          ),
+
+          // ── Note / Obiettivi ──────────────────────────────
+          sectionLabel('NOTE & OBIETTIVI', Icons.notes_rounded, const Color(0xFF888888)),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            ),
+            child: TextField(
+              controller: _noteExtraController,
+              maxLines: 4,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                hintText: 'Scrivi i tuoi obiettivi, note di progressione...',
+                hintStyle: const TextStyle(color: Color(0xFF444444), fontSize: 13),
+                filled: true,
+                fillColor: surfaceAlt,
+                contentPadding: const EdgeInsets.all(14),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: orange, width: 1.5)),
               ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _misureController,
-            maxLines: 4,
-            decoration: const InputDecoration(
-              labelText: 'Misure (Petto, Braccia, Vita, Gambe...)',
-              alignLabelWithHint: true,
-              prefixIcon: Icon(Icons.straighten),
-              border: OutlineInputBorder(),
             ),
           ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _noteExtraController,
-            maxLines: 4,
-            decoration: const InputDecoration(
-              labelText: 'Note Generali / Obiettivi',
-              alignLabelWithHint: true,
-              prefixIcon: Icon(Icons.notes),
-              border: OutlineInputBorder(),
-            ),
-          ),
+
           const SizedBox(height: 24),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              backgroundColor: Color(0xFFFF6B1A),
-              foregroundColor: Colors.white,
-            ),
-            onPressed: _salvaDatiProfilo,
-            icon: const Icon(Icons.save),
-            label: const Text(
-              'Salva e Sincronizza Cloud',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+
+          // ── Save button ───────────────────────────────────
+          SizedBox(
+            height: 52,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFCC1A1A), orange],
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                ),
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: orange.withValues(alpha: 0.3),
+                    blurRadius: 14,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: ElevatedButton.icon(
+                onPressed: _salvaDatiProfilo,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.transparent,
+                  shadowColor: Colors.transparent,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                icon: const Icon(Icons.save_rounded, color: Colors.white),
+                label: const Text(
+                  'SALVA E SINCRONIZZA',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 14,
+                    letterSpacing: 1.5,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
             ),
           ),
+
           const SizedBox(height: 12),
-          Card(
+
+          // ── Ricalcolo toggle ──────────────────────────────
+          Container(
+            decoration: BoxDecoration(
+              color: surface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            ),
             child: SwitchListTile.adaptive(
-              title: const Text('Ricalcola automaticamente i carichi'),
-              subtitle: const Text(
-                'Se disattivo, mantiene i carichi custom dove possibile.',
-              ),
+              title: const Text('Ricalcola automaticamente i carichi', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+              subtitle: const Text('Se disattivo, mantiene i carichi custom.', style: TextStyle(fontSize: 12, color: Color(0xFF888888))),
               value: _forceRecalculateWeights,
+              activeThumbColor: orange,
+              activeTrackColor: orange.withValues(alpha: 0.4),
               onChanged: _salvaPreferenzaToggle,
             ),
           ),
-          const SizedBox(height: 40),
         ],
       ),
     );
@@ -1326,6 +1527,15 @@ class _ProfiloScreenState extends State<ProfiloScreen> {
   void dispose() {
     _nuovoEsercizioController.dispose();
     _nomeUtenteController.dispose();
+    _pettoCtrll.dispose();
+    _vitaCtrll.dispose();
+    _fianchiCtrll.dispose();
+    _spalleCtrll.dispose();
+    _braccioDxCtrll.dispose();
+    _braccioSxCtrll.dispose();
+    _cosciaDxCtrll.dispose();
+    _cosciaSxCtrll.dispose();
+    _polpaccioCtrll.dispose();
     _pesoController.dispose();
     _altezzaController.dispose();
     _misureController.dispose();

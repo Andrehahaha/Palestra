@@ -39,6 +39,7 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
   final Set<String> _collapsedExercises = <String>{};
   bool _compactMode = false;
   bool _showOnlyIncomplete = false;
+  bool _headerExpanded = false;
 
   String get _bozzaKey => 'workout_bozza_${widget.scheda.id}';
 
@@ -1396,7 +1397,6 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
 
   Widget _buildSchedaHeaderCompatto() {
     final stats = _statsFromScheda(widget.scheda);
-    final totalExercises = stats['exercises'] ?? 0;
     final totalSeries = stats['totalSeries'] ?? 0;
     final completedSeries = stats['completedSeries'] ?? 0;
     final completionRatio = totalSeries == 0 ? 0.0 : completedSeries / totalSeries;
@@ -1405,176 +1405,202 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
 
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.fromLTRB(16, 10, 16, 6),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white12),
+        color: const Color(0xFF141414),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              const Icon(Icons.timeline, color: Colors.lightBlueAccent, size: 18),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Text(
-                  'Progressione settimanale',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: Colors.greenAccent.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.greenAccent.withValues(alpha: 0.4)),
-                ),
-                child: Text(
-                  'W${widget.scheda.settimanaCorrente}',
-                  style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.greenAccent),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              OutlinedButton.icon(
-                onPressed: canGoBack ? _vaiSettimanaPrecedente : null,
-                icon: const Icon(Icons.chevron_left, size: 18),
-                label: const Text('Precedente'),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: _vaiSettimanaSuccessiva,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.deepOrange,
-                    foregroundColor: Colors.white,
-                  ),
-                  icon: const Icon(Icons.trending_up, size: 18),
-                  label: Text('Pianifica W${widget.scheda.settimanaCorrente + 1}'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                tooltip: 'Apri timeline settimane',
-                onPressed: _apriGestioneSettimane,
-                icon: const Icon(Icons.view_timeline, color: Colors.amber, size: 20),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: weeks.map((w) {
-                final isCurrent = w == widget.scheda.settimanaCorrente;
-                final hasSnapshot = _weekSnapshots.containsKey(w) ||
-                    widget.scheda.eserciziPerSettimana.containsKey(w) ||
-                    isCurrent;
-                return Padding(
-                  padding: const EdgeInsets.only(right: 6),
-                  child: ChoiceChip(
-                    label: Text('W$w'),
-                    selected: isCurrent,
-                    selectedColor: Colors.greenAccent.withValues(alpha: 0.2),
-                    backgroundColor: Colors.black26,
-                    side: BorderSide(
-                      color: isCurrent
-                          ? Colors.greenAccent.withValues(alpha: 0.6)
-                          : Colors.white12,
+          // ── Collapsed strip (always visible) ──────────────
+          InkWell(
+            onTap: () => setState(() => _headerExpanded = !_headerExpanded),
+            borderRadius: BorderRadius.circular(12),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0D2A0D),
+                      borderRadius: BorderRadius.circular(6),
                     ),
-                    onSelected: hasSnapshot ? (_) => _vaiASettimana(w) : null,
+                    child: Text(
+                      'W${widget.scheda.settimanaCorrente}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF4CAF50),
+                      ),
+                    ),
                   ),
-                );
-              }).toList(),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(3),
+                      child: LinearProgressIndicator(
+                        value: completionRatio,
+                        minHeight: 4,
+                        backgroundColor: Colors.white.withValues(alpha: 0.08),
+                        valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF4CAF50)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${(completionRatio * 100).toStringAsFixed(0)}%',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF4CAF50),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Icon(
+                    _headerExpanded ? Icons.expand_less : Icons.expand_more,
+                    size: 18,
+                    color: const Color(0xFF555555),
+                  ),
+                ],
+              ),
             ),
           ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '$totalExercises esercizi • $completedSeries/$totalSeries serie completate',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white70, fontSize: 12),
-                ),
+
+          // ── Expanded content ───────────────────────────────
+          if (_headerExpanded) ...[
+            Divider(height: 1, color: Colors.white.withValues(alpha: 0.07)),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Navigation buttons
+                  Row(
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: canGoBack ? _vaiSettimanaPrecedente : null,
+                        icon: const Icon(Icons.chevron_left, size: 16),
+                        label: const Text('Prec.'),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: _vaiSettimanaSuccessiva,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFFF6B1A),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          icon: const Icon(Icons.trending_up, size: 16),
+                          label: Text('Pianifica W${widget.scheda.settimanaCorrente + 1}'),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      IconButton(
+                        tooltip: 'Timeline settimane',
+                        onPressed: _apriGestioneSettimane,
+                        icon: const Icon(Icons.view_timeline, color: Color(0xFFFFB347), size: 18),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  // Week chips
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: weeks.map((w) {
+                        final isCurrent = w == widget.scheda.settimanaCorrente;
+                        final hasSnapshot = _weekSnapshots.containsKey(w) ||
+                            widget.scheda.eserciziPerSettimana.containsKey(w) ||
+                            isCurrent;
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: ChoiceChip(
+                            label: Text('W$w', style: const TextStyle(fontSize: 12)),
+                            selected: isCurrent,
+                            selectedColor: const Color(0xFF4CAF50).withValues(alpha: 0.2),
+                            backgroundColor: Colors.white.withValues(alpha: 0.04),
+                            side: BorderSide(
+                              color: isCurrent
+                                  ? const Color(0xFF4CAF50).withValues(alpha: 0.6)
+                                  : Colors.white.withValues(alpha: 0.1),
+                            ),
+                            onSelected: hasSnapshot ? (_) => _vaiASettimana(w) : null,
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  // Filter/action chips
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      FilterChip(
+                        label: const Text('Solo incompleti', style: TextStyle(fontSize: 12)),
+                        selected: _showOnlyIncomplete,
+                        onSelected: (_) => setState(() => _showOnlyIncomplete = !_showOnlyIncomplete),
+                        avatar: Icon(
+                          _showOnlyIncomplete ? Icons.filter_alt : Icons.filter_alt_outlined,
+                          size: 14,
+                          color: _showOnlyIncomplete ? Colors.amber : Colors.white54,
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 2),
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      FilterChip(
+                        label: const Text('Compatta', style: TextStyle(fontSize: 12)),
+                        selected: _compactMode,
+                        onSelected: (_) => setState(() => _compactMode = !_compactMode),
+                        avatar: Icon(
+                          _compactMode ? Icons.view_agenda : Icons.view_stream,
+                          size: 14,
+                          color: _compactMode ? const Color(0xFF6BB5E8) : Colors.white54,
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 2),
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      ActionChip(
+                        label: const Text('Dischi', style: TextStyle(fontSize: 12)),
+                        avatar: const Icon(Icons.calculate, size: 14),
+                        onPressed: _apriCalcolatoreDischi,
+                        padding: const EdgeInsets.symmetric(horizontal: 2),
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      ActionChip(
+                        label: const Text('+ Esercizio', style: TextStyle(fontSize: 12)),
+                        avatar: const Icon(Icons.add, size: 14),
+                        onPressed: () async {
+                          final nuovo = await Navigator.push(context, MaterialPageRoute(builder: (context) => const CreaEsercizioScreen()));
+                          if (nuovo != null) {
+                            setState(() => widget.scheda.esercizi.add(nuovo));
+                            _scheduleBozzaSave();
+                          }
+                        },
+                        padding: const EdgeInsets.symmetric(horizontal: 2),
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ],
+                  ),
+                ],
               ),
-              Text(
-                '${(completionRatio * 100).toStringAsFixed(0)}%',
-                style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.w700),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: completionRatio,
-              minHeight: 4,
-              backgroundColor: Colors.white12,
-              valueColor: const AlwaysStoppedAnimation<Color>(Colors.greenAccent),
             ),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 6,
-            children: [
-              FilterChip(
-                label: const Text('Solo incompleti'),
-                selected: _showOnlyIncomplete,
-                onSelected: (_) {
-                  setState(() {
-                    _showOnlyIncomplete = !_showOnlyIncomplete;
-                  });
-                },
-                avatar: Icon(
-                  _showOnlyIncomplete ? Icons.filter_alt : Icons.filter_alt_outlined,
-                  size: 16,
-                  color: _showOnlyIncomplete ? Colors.amber : Colors.white70,
-                ),
-              ),
-              FilterChip(
-                label: const Text('Vista compatta'),
-                selected: _compactMode,
-                onSelected: (_) {
-                  setState(() {
-                    _compactMode = !_compactMode;
-                  });
-                },
-                avatar: Icon(
-                  _compactMode ? Icons.view_agenda : Icons.view_stream,
-                  size: 16,
-                  color: _compactMode ? Colors.lightBlueAccent : Colors.white70,
-                ),
-              ),
-              ActionChip(
-                label: const Text('Calcola dischi'),
-                avatar: const Icon(Icons.calculate, size: 16),
-                onPressed: _apriCalcolatoreDischi,
-              ),
-              ActionChip(
-                label: const Text('Aggiungi esercizio'),
-                avatar: const Icon(Icons.add, size: 16),
-                onPressed: () async {
-                  final nuovo = await Navigator.push(context, MaterialPageRoute(builder: (context) => const CreaEsercizioScreen()));
-                  if (nuovo != null) {
-                    setState(() {
-                      widget.scheda.esercizi.add(nuovo);
-                    });
-                    _scheduleBozzaSave();
-                  }
-                },
-              ),
-            ],
-          ),
+          ],
         ],
       ),
     );
