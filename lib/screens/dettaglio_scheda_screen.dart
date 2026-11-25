@@ -3,8 +3,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:vibration/vibration.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math'; 
@@ -15,7 +13,7 @@ import '../models/serie.dart';
 import 'crea_esercizio.dart';
 import 'settimana_successiva_screen.dart';
 import '../services/api_esercizi.dart';
-import '../services/athlete_progress_service.dart';
+import '../services/sessioni_allenamento.dart';
 import '../services/archivio_atleta.dart';
 import '../services/carichi.dart';
 
@@ -36,7 +34,6 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
   final ArchivioAtleta _archivio = ArchivioAtleta.instance;
   List<Map<String, dynamic>> _databaseEsercizi = [];
   Timer? _bozzaDebounce;
-  final AthleteProgressService _athleteProgressService = AthleteProgressService();
   final Map<int, Map<String, dynamic>> _weekSnapshots = {};
   final Set<String> _collapsedExercises = <String>{};
   bool _compactMode = false;
@@ -505,12 +502,6 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
 
   // 👇 SALVATAGGIO CON NOTE
   Future<void> _salvaAllenamentoIbrido(String noteFineAllenamento) async {
-    final nuovoAllenamento = Allenamento(
-      data: DateTime.now(),
-      scheda: widget.scheda,
-      note: noteFineAllenamento.isNotEmpty ? noteFineAllenamento : null, 
-    );
-
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -518,34 +509,7 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
     );
 
     try {
-      _archivio.storico.add(Allenamento.fromJson(nuovoAllenamento.toJson()));
-      await _archivio.salva();
-
-      final user = FirebaseAuth.instance.currentUser;
-      if (user != null) {
-        Map<String, dynamic> datiCloud = nuovoAllenamento.toJson();
-        datiCloud['atletaId'] = user.uid;
-        datiCloud['atletaEmail'] = user.email;
-        final coachId = await _caricaCoachIdAtleta(user.uid);
-        if (coachId != null && coachId.isNotEmpty) {
-          datiCloud['coachId'] = coachId;
-        }
-        
-        await FirebaseFirestore.instance.collection('storico_atleti').add(datiCloud);
-
-        if (coachId != null && coachId.isNotEmpty) {
-          try {
-            await _athleteProgressService.saveProgressEntry(
-              coachId: coachId,
-              athleteId: user.uid,
-              payload: datiCloud,
-              sessionAt: nuovoAllenamento.data,
-            );
-          } catch (e) {
-            debugPrint('Sync nuovo schema progress fallita: $e');
-          }
-        }
-      }
+      await SessioniAllenamento.instance.completa(widget.scheda, note: noteFineAllenamento);
 
       if (!mounted) return;
       await _pulisciBozzaWorkout();
@@ -569,18 +533,6 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
     }
   }
 
-  Future<String?> _caricaCoachIdAtleta(String atletaId) async {
-    try {
-      final doc = await FirebaseFirestore.instance.collection('users').doc(atletaId).get();
-      if (!doc.exists) return null;
-      final data = doc.data();
-      final coachId = data?['coachId']?.toString().trim() ?? '';
-      return coachId.isEmpty ? null : coachId;
-    } catch (e) {
-      debugPrint('Impossibile leggere coachId atleta: $e');
-      return null;
-    }
-  }
 
   Map<String, String>? _getDatiPrecedenti(String nomeEs, int indiceSerie) {
     String nomeTargetIta = Carichi.traduci(nomeEs).toLowerCase().trim();

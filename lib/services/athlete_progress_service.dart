@@ -55,6 +55,7 @@ class AthleteProgressService {
     required String athleteId,
     required Map<String, dynamic> payload,
     DateTime? sessionAt,
+    String? entryId,
   }) async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) {
@@ -62,7 +63,7 @@ class AthleteProgressService {
     }
 
     final when = sessionAt ?? DateTime.now();
-    final docId = buildDateKey(when);
+    final docId = entryId ?? buildDateKey(when);
     final cleanPayload = Map<String, dynamic>.from(payload)
       ..removeWhere((key, value) => value == null);
 

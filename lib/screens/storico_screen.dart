@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import '../models/allenamento.dart';
 import '../services/dizionario_esercizi.dart'; 
-import '../services/athlete_progress_service.dart';
+import '../services/sessioni_allenamento.dart';
 
 class StoricoScreen extends StatefulWidget {
   final List<Allenamento> storico;
@@ -16,54 +14,6 @@ class StoricoScreen extends StatefulWidget {
 }
 
 class _StoricoScreenState extends State<StoricoScreen> {
-
-  Future<String?> _caricaCoachIdAtleta(String atletaId) async {
-    try {
-      final doc = await FirebaseFirestore.instance.collection('users').doc(atletaId).get();
-      if (!doc.exists) return null;
-      final coachId = doc.data()?['coachId']?.toString().trim() ?? '';
-      return coachId.isEmpty ? null : coachId;
-    } catch (e) {
-      debugPrint("Errore lettura coachId: $e");
-      return null;
-    }
-  }
-
-  // 👇 FUNZIONE CHE ELIMINA DAL CLOUD
-  Future<void> _eliminaDaCloud(Allenamento allenamento) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-    try {
-      final coachId = await _caricaCoachIdAtleta(user.uid);
-      if (coachId != null && coachId.isNotEmpty) {
-        final progressDocId = AthleteProgressService.buildDateKey(allenamento.data);
-        final progressRef = FirebaseFirestore.instance
-            .collection('coaches')
-            .doc(coachId)
-            .collection('athletes')
-            .doc(user.uid)
-            .collection('progress')
-            .doc(progressDocId);
-
-        final progressDoc = await progressRef.get();
-        if (progressDoc.exists) {
-          await progressRef.delete();
-        }
-      }
-
-      final snapshot = await FirebaseFirestore.instance
-          .collection('storico_atleti')
-          .where('atletaId', isEqualTo: user.uid)
-          .where('data', isEqualTo: allenamento.data.toIso8601String())
-          .get();
-
-      for (var doc in snapshot.docs) {
-        await doc.reference.delete(); // Uccide il file nel cloud!
-      }
-    } catch (e) {
-      debugPrint("Errore eliminazione storico cloud: $e");
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -104,14 +54,12 @@ class _StoricoScreenState extends State<StoricoScreen> {
                   },
                   onDismissed: (direction) {
                     
-                    // 👇 ELIMINA DAL DATABASE PRIMA DI ELIMINARE LOCALMENTE
-                    _eliminaDaCloud(allenamento);
-
                     setState(() {
                       int originalIndex = widget.storico.indexOf(allenamento);
                       widget.storico.removeAt(originalIndex);
                     });
                     
+                    SessioniAllenamento.instance.elimina(allenamento);
                     widget.onUpdate(); 
 
                     ScaffoldMessenger.of(context).showSnackBar(

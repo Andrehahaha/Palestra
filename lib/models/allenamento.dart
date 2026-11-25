@@ -84,11 +84,18 @@ class Allenamento {
   Scheda scheda;
   String? note; // 👈 AGGIUNTO PER IL FEEDBACK
 
+  /// Id stabile della sessione: chiave dei documenti cloud. Per i dati
+  /// salvati prima dell'introduzione dell'id viene ricavato dalla data.
+  final String id;
+
   Allenamento({
     required this.data,
     required this.scheda,
     this.note,
-  });
+    String? id,
+  }) : id = (id == null || id.isEmpty) ? idDaData(data) : id;
+
+  static String idDaData(DateTime data) => 'all_${data.microsecondsSinceEpoch}';
 
   factory Allenamento.fromJson(Map<String, dynamic> json) {
     final rawScheda = json['scheda'];
@@ -97,6 +104,7 @@ class Allenamento {
         : _parseSchedaFromLegacyRoot(json);
 
     return Allenamento(
+      id: json['id']?.toString(),
       data: _parseDate(json['data'] ?? json['sessionAt']),
       scheda: scheda,
       note: (json['feedback_atleta'] ?? json['note'])?.toString(), // 👈 LEGGE LA NOTA DAL CLOUD/MEMORIA
@@ -105,6 +113,7 @@ class Allenamento {
 
   Map<String, dynamic> toJson() {
     return {
+      'id': id,
       'data': data.toIso8601String(),
       'scheda': scheda.toJson(),
       'feedback_atleta': note, // 👈 INVIA LA NOTA AL CLOUD/MEMORIA

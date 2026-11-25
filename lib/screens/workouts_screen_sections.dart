@@ -301,17 +301,8 @@ extension _WorkoutsScreenSections on _WorkoutsScreenState {
             context,
             MaterialPageRoute(builder: (context) => DettaglioSchedaScreen(scheda: scheda, storico: storico)),
           );
-          if (completato == true) {
-            final copiaScheda = Scheda.fromJson(scheda.toJson());
-            final nuovoAllenamento = Allenamento(data: DateTime.now(), scheda: copiaScheda);
-            _inviaAllenamentoAlCloud(nuovoAllenamento);
-            for (var es in scheda.esercizi) {
-              for (var s in es.serieAttive) {
-                s.isCompletata = false;
-              }
-            }
-          }
-          _updateState(() {});
+          // La sessione è già registrata da SessioniAllenamento.completa.
+          if (completato == true) _updateState(() {});
           _salvaDati();
         },
       ),

@@ -12,7 +12,6 @@ import '../models/scheda.dart';
 import '../models/allenamento.dart';
 import '../models/esercizio.dart';
 import '../services/ai_service.dart';
-import '../services/dizionario_esercizi.dart';
 import '../services/archivio_atleta.dart';
 import '../services/carichi.dart';
 import 'dettaglio_scheda_screen.dart';
@@ -199,24 +198,6 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
     }
   }
 
-  Future<void> _inviaAllenamentoAlCloud(Allenamento allenamento) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-    try {
-      await FirebaseFirestore.instance.collection('storico_atleti').add({
-        'atletaId': user.uid,
-        'data': allenamento.data.toIso8601String(),
-        'nomeScheda': allenamento.scheda.nome,
-        'esercizi': allenamento.scheda.esercizi.map((e) => {
-          'nome': DizionarioEsercizi.daIngleseAItaliano[e.nome] ?? e.nome,
-          'target_ripetizioni': e.ripetizioni, 
-          'serie': e.serieAttive.where((s) => s.isCompletata).map((s) => { 'peso': s.peso, 'tipo': s.tipo }).toList(),
-        }).toList(),
-      });
-    } catch (e) {
-      debugPrint("Errore invio allenamento: $e");
-    }
-  }
 
   Future<void> _caricaDati() async {
     await _archivio.carica();

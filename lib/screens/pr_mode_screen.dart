@@ -2,13 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'dart:async';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/allenamento.dart';
 import '../services/dolore_data.dart';
 import '../services/archivio_atleta.dart';
 import '../services/carichi.dart';
+import '../services/sessioni_allenamento.dart';
 
 // ============================================================================
 // SCHERMATA MODALITÀ PR
@@ -188,37 +187,7 @@ class _PRModeScreenState extends State<PRModeScreen> {
     };
 
     final nuovoAll = Allenamento.fromJson(fakeJson);
-    await _archivio.carica();
-    _archivio.storico.add(nuovoAll);
-    await _archivio.salva();
-
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      try {
-        await FirebaseFirestore.instance.collection('storico_atleti').add({
-          'atletaId': user.uid,
-          'atletaEmail': user.email,
-          'data': dataIso,
-          'nomeScheda': nomeScheda,
-          'feedback_atleta': feedback, 
-          'esercizi': [
-            {
-              'nome': nomeEsteso,
-              'target_ripetizioni': reps,
-              'tecniche': ['Test PR'],
-              'serie': [
-                {
-                  'peso': peso.toString(),
-                  'tipo': 'Nuovo PR'
-                }
-              ]
-            }
-          ]
-        });
-      } catch (e) {
-        debugPrint("Errore invio PR al database: $e");
-      }
-    }
+    await SessioniAllenamento.instance.registra(nuovoAll);
   }
 
   Future<void> _salvaPRManuale(String es, double peso, {bool sincronizzaCloud = true}) async {
