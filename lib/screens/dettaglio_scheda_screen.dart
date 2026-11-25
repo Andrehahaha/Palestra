@@ -14,6 +14,7 @@ import 'crea_esercizio.dart';
 import 'settimana_successiva_screen.dart';
 import '../services/api_esercizi.dart';
 import '../services/sessioni_allenamento.dart';
+import '../services/stretching_scheda.dart';
 import '../services/archivio_atleta.dart';
 import '../services/carichi.dart';
 
@@ -379,82 +380,10 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
     _scheduleBozzaSave();
   }
 
-  String _macroTagDaCategoria(String categoria) {
-    final c = Carichi.normalizza(categoria);
-
-    if (c.contains('petto') || c.contains('pettoral')) return 'petto';
-    if (c.contains('dorso') || c.contains('schiena') || c.contains('lombar') || c.contains('trapez') || c.contains('lat')) return 'schiena';
-    if (c.contains('spall') || c.contains('deltoid')) return 'spalle';
-    if (c.contains('bicip') || c.contains('tricip') || c.contains('avambr') || c.contains('bracci')) return 'braccia';
-    if (c.contains('gambe') || c.contains('quadric') || c.contains('femoral') || c.contains('glute') || c.contains('polpacc') || c.contains('addutt') || c.contains('abdutt')) return 'gambe';
-    if (c.contains('core') || c.contains('addom') || c.contains('obliqu')) return 'core';
-    if (c.contains('total')) return 'total';
-    return 'altro';
-  }
-
-  Set<String> _tagGruppiScheda() {
-    final tag = <String>{};
-
-    for (final esercizioScheda in widget.scheda.esercizi) {
-      final nomeScheda = Carichi.normalizza(Carichi.traduci(esercizioScheda.nome));
-
-      Map<String, dynamic>? match;
-      for (final db in _databaseEsercizi) {
-        final nomeDb = Carichi.normalizza((db['nome'] ?? '').toString());
-        if (nomeDb == nomeScheda) {
-          match = db;
-          break;
-        }
-      }
-
-      if (match != null) {
-        tag.add(_macroTagDaCategoria((match['categoria'] ?? '').toString()));
-      }
-    }
-
-    tag.remove('altro');
-    return tag;
-  }
-
-  int _limiteStretching(Set<String> tagScheda) {
-    final nomeScheda = Carichi.normalizza(widget.scheda.nome);
-    final categoriaScheda = Carichi.normalizza(widget.scheda.categoria);
-    final isFullBody = nomeScheda.contains('full body') ||
-        nomeScheda.contains('total body') ||
-        categoriaScheda.contains('full body') ||
-        categoriaScheda.contains('total body') ||
-        categoriaScheda.contains('total');
-
-    if (isFullBody) return 6;
-    if (tagScheda.length >= 4) return 7;
-    if (tagScheda.length >= 2) return 8;
-    return 6;
-  }
-
-  List<Map<String, dynamic>> _eserciziSoloStretching() {
-    final tagScheda = _tagGruppiScheda();
-    final limite = _limiteStretching(tagScheda);
-
-    List<Map<String, dynamic>> risultati = _databaseEsercizi.where((es) => es['isStretching'] == true).toList();
-
-    if (tagScheda.isNotEmpty) {
-      risultati = risultati.where((es) {
-        final tagStretching = _macroTagDaCategoria((es['categoria'] ?? '').toString());
-        return tagScheda.contains(tagStretching) || tagStretching == 'total';
-      }).toList();
-    }
-
-    if (risultati.isEmpty) {
-      risultati = _databaseEsercizi.where((es) => es['isStretching'] == true).toList();
-    }
-
-    risultati.sort((a, b) => (a['nome'] ?? '').toString().compareTo((b['nome'] ?? '').toString()));
-    return risultati.take(limite).toList();
-  }
-
   Widget _buildSoloStretchingSection() {
-    final stretching = _eserciziSoloStretching();
-    final tagScheda = _tagGruppiScheda();
+    final consiglio = StretchingScheda.consiglia(widget.scheda, _databaseEsercizi);
+    final stretching = consiglio.esercizi;
+    final tagScheda = consiglio.gruppi;
     final sottotitolo = tagScheda.isEmpty
         ? 'Esercizi dal database master Tiger'
         : 'Filtrati per gruppi muscolari scheda: ${tagScheda.join(', ')}';
