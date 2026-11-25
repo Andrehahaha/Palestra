@@ -16,6 +16,7 @@ import 'crea_esercizio.dart';
 import 'settimana_successiva_screen.dart';
 import '../services/api_esercizi.dart';
 import '../services/athlete_progress_service.dart';
+import '../services/archivio_atleta.dart';
 import '../services/carichi.dart';
 
 // ============================================================================
@@ -32,7 +33,7 @@ class DettaglioSchedaScreen extends StatefulWidget {
 }
 
 class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with WidgetsBindingObserver {
-  static const String _weekHistoryStoreKey = 'week_history_store_v1';
+  final ArchivioAtleta _archivio = ArchivioAtleta.instance;
   List<Map<String, dynamic>> _databaseEsercizi = [];
   Timer? _bozzaDebounce;
   final AthleteProgressService _athleteProgressService = AthleteProgressService();
@@ -187,35 +188,30 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
   Future<void> _caricaBozzaWorkout() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final rawWeekStore = prefs.getString(_weekHistoryStoreKey);
-      if (rawWeekStore != null) {
-        final decodedStore = jsonDecode(rawWeekStore);
-        if (decodedStore is Map) {
-          dynamic perScheda = decodedStore[_schedaWeekHistoryKey];
-          final usingLegacyKey = perScheda == null;
-          perScheda ??= decodedStore[_legacySchedaWeekHistoryKey];
-          if (perScheda is Map) {
-            _weekSnapshots.clear();
-            for (final entry in perScheda.entries) {
-              final k = int.tryParse(entry.key.toString());
-              if (k == null) continue;
-              final v = entry.value;
-              if (v is Map) {
-                _weekSnapshots[k] = Map<String, dynamic>.from(v);
-              }
-            }
-            if (kDebugMode) {
-              debugPrint('[WEEK] caricati snapshot da store: key=$_schedaWeekHistoryKey weeks=${_weekSnapshots.keys.toList()..sort()} legacyFallback=$usingLegacyKey');
-            }
-
-            if (usingLegacyKey) {
-              final migrated = Map<String, dynamic>.from(decodedStore);
-              migrated[_schedaWeekHistoryKey] =
-                  _weekSnapshots.map((k, v) => MapEntry(k.toString(), v));
-              migrated.remove(_legacySchedaWeekHistoryKey);
-              await prefs.setString(_weekHistoryStoreKey, jsonEncode(migrated));
-            }
+      await _archivio.carica();
+      final decodedStore = _archivio.weekHistory;
+      dynamic perScheda = decodedStore[_schedaWeekHistoryKey];
+      final usingLegacyKey = perScheda == null;
+      perScheda ??= decodedStore[_legacySchedaWeekHistoryKey];
+      if (perScheda is Map) {
+        _weekSnapshots.clear();
+        for (final entry in perScheda.entries) {
+          final k = int.tryParse(entry.key.toString());
+          if (k == null) continue;
+          final v = entry.value;
+          if (v is Map) {
+            _weekSnapshots[k] = Map<String, dynamic>.from(v);
           }
+        }
+        if (kDebugMode) {
+          debugPrint('[WEEK] caricati snapshot da store: key=$_schedaWeekHistoryKey weeks=${_weekSnapshots.keys.toList()..sort()} legacyFallback=$usingLegacyKey');
+        }
+
+        if (usingLegacyKey) {
+          decodedStore[_schedaWeekHistoryKey] =
+              _weekSnapshots.map((k, v) => MapEntry(k.toString(), v));
+          decodedStore.remove(_legacySchedaWeekHistoryKey);
+          await _archivio.salvaWeekHistory();
         }
       }
 
@@ -290,19 +286,9 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
       _snapshotCurrentWeek();
       final prefs = await SharedPreferences.getInstance();
 
-      final existingRaw = prefs.getString(_weekHistoryStoreKey);
-      final weekStore = <String, dynamic>{};
-      if (existingRaw != null) {
-        final decoded = jsonDecode(existingRaw);
-        if (decoded is Map<String, dynamic>) {
-          weekStore.addAll(decoded);
-        } else if (decoded is Map) {
-          weekStore.addAll(Map<String, dynamic>.from(decoded));
-        }
-      }
-      weekStore[_schedaWeekHistoryKey] =
+      _archivio.weekHistory[_schedaWeekHistoryKey] =
           _weekSnapshots.map((k, v) => MapEntry(k.toString(), v));
-      await prefs.setString(_weekHistoryStoreKey, jsonEncode(weekStore));
+      await _archivio.salvaWeekHistory();
 
       await prefs.setString(
         _bozzaKey,
@@ -343,41 +329,7 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
     }
   }
 
-  Future<Map<String, double>> _caricaPrAtleta() async {
-    final out = <String, double>{};
-    final prefs = await SharedPreferences.getInstance();
-
-    final local = prefs.getString('personal_records');
-    if (local != null) {
-      try {
-        final decoded = jsonDecode(local);
-        if (decoded is Map) {
-          for (final e in decoded.entries) {
-            final v = e.value;
-            if (v is num) out[e.key.toString()] = v.toDouble();
-          }
-        }
-      } catch (e) {
-        debugPrint('PR locali corrotti/non validi: $e');
-      }
-    }
-
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      try {
-        final doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
-        final cloud = doc.data()?['personal_records'];
-        if (cloud is Map) {
-          for (final e in cloud.entries) {
-            final v = e.value;
-            if (v is num) out[e.key.toString()] = v.toDouble();
-          }
-        }
-      } catch (_) {}
-    }
-
-    return out;
-  }
+  Future<Map<String, double>> _caricaPrAtleta() => _archivio.caricaPr();
 
   Future<void> _applicaPrSuSchedaAperta() async {
     final prs = await _caricaPrAtleta();
@@ -421,29 +373,7 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
     final value = double.tryParse(controller.text.replaceAll(',', '.').trim());
     if (value == null || value <= 0) return;
 
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString('personal_records');
-    final records = <String, dynamic>{};
-    if (raw != null) {
-      final decoded = jsonDecode(raw);
-      if (decoded is Map<String, dynamic>) {
-        records.addAll(decoded);
-      } else if (decoded is Map) {
-        records.addAll(Map<String, dynamic>.from(decoded));
-      }
-    }
-    records.addAll(Carichi.recordPerPr(lift.nome, value));
-    await prefs.setString('personal_records', jsonEncode(records));
-
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      try {
-        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-          'personal_records': records,
-          'ultimo_aggiornamento_pr': DateTime.now().toIso8601String(),
-        }, SetOptions(merge: true));
-      } catch (_) {}
-    }
+    await _archivio.salvaPr(Carichi.recordPerPr(lift.nome, value));
 
     if (!mounted) return;
     setState(() {
@@ -588,12 +518,8 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
     );
 
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final String? storicoJson = prefs.getString('storico_salvato');
-      List<dynamic> listaLocale = storicoJson != null ? jsonDecode(storicoJson) : [];
-      
-      listaLocale.add(nuovoAllenamento.toJson());
-      await prefs.setString('storico_salvato', jsonEncode(listaLocale));
+      _archivio.storico.add(Allenamento.fromJson(nuovoAllenamento.toJson()));
+      await _archivio.salva();
 
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
@@ -917,33 +843,7 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
     _scheduleBozzaSave();
   }
 
-  Future<void> _sincronizzaWeekHistorySuCloud() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString(_weekHistoryStoreKey);
-      Map<String, dynamic> decoded = {};
-      if (raw != null && raw.trim().isNotEmpty) {
-        final json = jsonDecode(raw);
-        if (json is Map<String, dynamic>) {
-          decoded = json;
-        } else if (json is Map) {
-          decoded = Map<String, dynamic>.from(json);
-        }
-      }
-
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-        'app_state': {
-          'week_history_store': decoded,
-          'updated_at': FieldValue.serverTimestamp(),
-        },
-      }, SetOptions(merge: true));
-    } catch (e) {
-      debugPrint('Errore sync week history cloud: $e');
-    }
-  }
+  Future<void> _sincronizzaWeekHistorySuCloud() => _archivio.salvaWeekHistory(cloud: true);
 
   Future<void> _eliminaSettimana(int week) async {
     _snapshotCurrentWeek();

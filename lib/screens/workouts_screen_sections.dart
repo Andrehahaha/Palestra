@@ -304,7 +304,6 @@ extension _WorkoutsScreenSections on _WorkoutsScreenState {
           if (completato == true) {
             final copiaScheda = Scheda.fromJson(scheda.toJson());
             final nuovoAllenamento = Allenamento(data: DateTime.now(), scheda: copiaScheda);
-            storico.add(nuovoAllenamento);
             _inviaAllenamentoAlCloud(nuovoAllenamento);
             for (var es in scheda.esercizi) {
               for (var s in es.serieAttive) {

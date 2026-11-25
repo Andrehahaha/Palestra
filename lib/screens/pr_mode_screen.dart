@@ -6,8 +6,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/allenamento.dart';
-import '../models/scheda.dart';
 import '../services/dolore_data.dart';
+import '../services/archivio_atleta.dart';
 import '../services/carichi.dart';
 
 // ============================================================================
@@ -27,6 +27,7 @@ class _PRModeScreenState extends State<PRModeScreen> {
   final List<String> _eserciziFissi = ['Panca', 'Squat', 'Stacco'];
   String _esercizioSelezionato = 'Panca';
 
+  final ArchivioAtleta _archivio = ArchivioAtleta.instance;
   final TextEditingController _maxController = TextEditingController();
   
   double pesoSelezionatoPerBilanciere = 0.0;
@@ -94,17 +95,8 @@ class _PRModeScreenState extends State<PRModeScreen> {
     final lift = Carichi.riconosciBig3(_getNomeEsteso(esercizioSelezionato));
     if (lift == null || nuovoPrKg <= 0) return;
 
-    final prefs = await SharedPreferences.getInstance();
-    final schedeJson = prefs.getString('schede_salvate');
-    if (schedeJson == null) return;
-
-    final decoded = jsonDecode(schedeJson);
-    if (decoded is! List) return;
-
-    final schede = decoded
-        .whereType<Map>()
-        .map((e) => Scheda.fromJson(Map<String, dynamic>.from(e)))
-        .toList();
+    await _archivio.carica();
+    final schede = _archivio.schede;
 
     bool changed = false;
 
@@ -117,30 +109,9 @@ class _PRModeScreenState extends State<PRModeScreen> {
     }
 
     if (!changed) return;
-
-    await prefs.setString(
-      'schede_salvate',
-      jsonEncode(schede.map((s) => s.toJson()).toList()),
-    );
-
-    await _sincronizzaSchedeRetroattiveSuCloud(schede);
+    await _archivio.salva();
   }
 
-  Future<void> _sincronizzaSchedeRetroattiveSuCloud(List<Scheda> schede) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    try {
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-        'app_state': {
-          'schede_salvate': schede.map((s) => s.toJson()).toList(),
-          'updated_at': FieldValue.serverTimestamp(),
-        },
-      }, SetOptions(merge: true));
-    } catch (e) {
-      debugPrint('Errore sync retroattivo schede cloud: $e');
-    }
-  }
 
   double _readPrForSelection(String shortExerciseName) {
     final manuale = prManuali[shortExerciseName];
@@ -160,32 +131,10 @@ class _PRModeScreenState extends State<PRModeScreen> {
   Future<void> _caricaDatiMemoria() async {
     final prefs = await SharedPreferences.getInstance();
 
-    final String? zonaSalvata = prefs.getString(zonaStretchingSharedKey);
-    if (zonaSalvata != null && zoneDolore.contains(zonaSalvata)) {
-      _zonaStretchingSelezionata = zonaSalvata;
-      aggiornaZonaStretchingCondivisa(zonaSalvata);
-    }
+    await _archivio.carica();
+    _zonaStretchingSelezionata = _archivio.zonaStretching;
 
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      try {
-        final doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
-        final cloudZona = doc.data()?['app_state']?['zona_stretching'];
-        if (cloudZona is String && zoneDolore.contains(cloudZona)) {
-          _zonaStretchingSelezionata = cloudZona;
-          aggiornaZonaStretchingCondivisa(cloudZona);
-          await prefs.setString(zonaStretchingSharedKey, cloudZona);
-        }
-      } catch (e) {
-        debugPrint('Errore caricamento zona cloud PR: $e');
-      }
-    }
-    
-    final String? prStoriciJson = prefs.getString('personal_records');
-    if (prStoriciJson != null) {
-      Map<String, dynamic> decodificati = jsonDecode(prStoriciJson);
-      decodificati.forEach((key, value) { iMieiPRStorici[key] = (value as num).toDouble(); });
-    }
+    iMieiPRStorici.addAll(await _archivio.prLocali());
 
     final String? manualiJson = prefs.getString('pr_manuali_salvati');
     if (manualiJson != null) {
@@ -200,25 +149,7 @@ class _PRModeScreenState extends State<PRModeScreen> {
     });
   }
 
-  Future<void> _salvaZonaStretching(String zona) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(zonaStretchingSharedKey, zona);
-    aggiornaZonaStretchingCondivisa(zona);
-
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      try {
-        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-          'app_state': {
-            'zona_stretching': zona,
-            'updated_at': FieldValue.serverTimestamp(),
-          },
-        }, SetOptions(merge: true));
-      } catch (e) {
-        debugPrint('Errore salvataggio zona cloud PR: $e');
-      }
-    }
-  }
+  Future<void> _salvaZonaStretching(String zona) => _archivio.impostaZona(zona);
 
   Future<void> _salvaPRInStorico(String nomeEs, double peso, double perc, String reps) async {
     String nomeEsteso = _getNomeEsteso(nomeEs);
@@ -257,11 +188,9 @@ class _PRModeScreenState extends State<PRModeScreen> {
     };
 
     final nuovoAll = Allenamento.fromJson(fakeJson);
-    final prefs = await SharedPreferences.getInstance();
-    final String? storicoJson = prefs.getString('storico_salvato');
-    List<dynamic> listaLocale = storicoJson != null ? jsonDecode(storicoJson) : [];
-    listaLocale.add(nuovoAll.toJson());
-    await prefs.setString('storico_salvato', jsonEncode(listaLocale));
+    await _archivio.carica();
+    _archivio.storico.add(nuovoAll);
+    await _archivio.salva();
 
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
@@ -300,27 +229,12 @@ class _PRModeScreenState extends State<PRModeScreen> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('pr_manuali_salvati', jsonEncode(prManuali));
 
-    String? prJson = prefs.getString('personal_records');
-    Map<String, dynamic> prGlobali = prJson != null ? jsonDecode(prJson) : {};
-    prGlobali.addAll(Carichi.recordPerPr(nomeEsteso, peso));
-    await prefs.setString('personal_records', jsonEncode(prGlobali));
+    await _archivio.salvaPr(Carichi.recordPerPr(nomeEsteso, peso), soloLocale: !sincronizzaCloud);
 
     await _aggiornaCarichiPercentualiRetroattivi(
       esercizioSelezionato: es,
       nuovoPrKg: peso,
     );
-
-    final user = FirebaseAuth.instance.currentUser;
-    if (sincronizzaCloud && user != null) {
-      try {
-        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-          'personal_records': prGlobali, 
-          'ultimo_aggiornamento_pr': DateTime.now().toIso8601String(),
-        }, SetOptions(merge: true));
-      } catch (e) {
-        debugPrint("Errore sync PR: $e");
-      }
-    }
   }
 
   void _aggiornaUI() {

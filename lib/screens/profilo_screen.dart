@@ -11,6 +11,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../models/allenamento.dart';
 import '../models/catalogo_esercizi.dart';
 import '../services/api_esercizi.dart';
+import '../services/archivio_atleta.dart';
 import '../services/dizionario_esercizi.dart'; 
 
 class ProfiloScreen extends StatefulWidget {
@@ -30,6 +31,7 @@ class _ProfiloScreenState extends State<ProfiloScreen> with SingleTickerProvider
   final TextEditingController _misureController = TextEditingController();
   final TextEditingController _noteExtraController = TextEditingController();
   
+  final ArchivioAtleta _archivio = ArchivioAtleta.instance;
   List<Allenamento> storico = [];
   List<String> nomiEserciziGrafico = [];
   List<Map<String, String>> eserciziCustom = []; 
@@ -122,10 +124,9 @@ class _ProfiloScreenState extends State<ProfiloScreen> with SingleTickerProvider
   Future<void> _caricaDati() async {
     final prefs = await SharedPreferences.getInstance();
     
-    final String? storicoSalvato = prefs.getString('storico_salvato');
-    if (storicoSalvato != null) {
-      final List<dynamic> jsonDecodificato = jsonDecode(storicoSalvato);
-      storico = jsonDecodificato.map((e) => Allenamento.fromJson(e)).toList();
+    await _archivio.carica();
+    storico = _archivio.storico;
+    {
       
       Map<String, String> nomiUnivoci = {}; 
       for (var allenamento in storico) {
@@ -204,11 +205,13 @@ class _ProfiloScreenState extends State<ProfiloScreen> with SingleTickerProvider
             .toList();
 
         if (storicoCloud.length > storico.length) {
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setString('storico_salvato', jsonEncode(storicoCloud.map((e) => e.toJson()).toList()));
+          _archivio.storico
+            ..clear()
+            ..addAll(storicoCloud);
+          await _archivio.salva();
           if (mounted) {
             setState(() {
-              storico = storicoCloud;
+              storico = _archivio.storico;
               _aggiornaInterfacciaGrafici();
             });
           }
@@ -235,11 +238,13 @@ class _ProfiloScreenState extends State<ProfiloScreen> with SingleTickerProvider
             .whereType<Allenamento>()
             .toList();
         if (storicoCloud.length > storico.length) {
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setString('storico_salvato', jsonEncode(storicoCloud.map((e) => e.toJson()).toList()));
+          _archivio.storico
+            ..clear()
+            ..addAll(storicoCloud);
+          await _archivio.salva();
           if (mounted) {
             setState(() {
-              storico = storicoCloud;
+              storico = _archivio.storico;
               _aggiornaInterfacciaGrafici();
             });
           }

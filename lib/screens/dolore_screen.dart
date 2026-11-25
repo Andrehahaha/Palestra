@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/archivio_atleta.dart';
 import '../services/dolore_data.dart';
 
 class DoloreScreen extends StatefulWidget {
@@ -24,7 +22,7 @@ class _DoloreScreenState extends State<DoloreScreen> {
   String? _tipoSuggeritoTest;
   int? _confidenzaTest;
 
-  static const String _tipoDoloreKey = 'tipo_dolore_selezionato';
+  final ArchivioAtleta _archivio = ArchivioAtleta.instance;
 
   final Map<String, Map<String, dynamic>> _profiliDolore = const {
     'Bruciore da acido lattico': {
@@ -156,78 +154,21 @@ class _DoloreScreenState extends State<DoloreScreen> {
   }
 
   Future<void> _caricaZonaSelezionata() async {
-    final prefs = await SharedPreferences.getInstance();
-    final String? zonaSalvata = prefs.getString(zonaStretchingSharedKey);
-    final String? tipoSalvato = prefs.getString(_tipoDoloreKey);
+    await _archivio.carica();
     if (!mounted) return;
-    if (zonaSalvata != null && zoneDolore.contains(zonaSalvata)) {
-      setState(() => _zonaSelezionata = zonaSalvata);
-      aggiornaZonaStretchingCondivisa(zonaSalvata);
-    }
-    if (tipoSalvato != null && _profiliDolore.containsKey(tipoSalvato)) {
-      setState(() => _tipoDoloreSelezionato = tipoSalvato);
-    }
-
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      try {
-        final doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
-        final cloudZona = doc.data()?['app_state']?['zona_stretching'];
-        final cloudTipo = doc.data()?['app_state']?['tipo_dolore'];
-        if (cloudZona is String && zoneDolore.contains(cloudZona) && mounted) {
-          setState(() => _zonaSelezionata = cloudZona);
-          aggiornaZonaStretchingCondivisa(cloudZona);
-          await prefs.setString(zonaStretchingSharedKey, cloudZona);
-        }
-        if (cloudTipo is String && _profiliDolore.containsKey(cloudTipo) && mounted) {
-          setState(() => _tipoDoloreSelezionato = cloudTipo);
-          await prefs.setString(_tipoDoloreKey, cloudTipo);
-        }
-      } catch (e) {
-        debugPrint('Errore caricamento zona cloud Dolore: $e');
-      }
-    }
+    final tipo = _archivio.tipoDolore;
+    setState(() {
+      _zonaSelezionata = _archivio.zonaStretching;
+      if (tipo != null && _profiliDolore.containsKey(tipo)) _tipoDoloreSelezionato = tipo;
+    });
   }
 
   Future<void> _salvaZonaSelezionata(String zona) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(zonaStretchingSharedKey, zona);
-    aggiornaZonaStretchingCondivisa(zona);
-
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      try {
-        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-          'app_state': {
-            'zona_stretching': zona,
-            'tipo_dolore': _tipoDoloreSelezionato,
-            'updated_at': FieldValue.serverTimestamp(),
-          },
-        }, SetOptions(merge: true));
-      } catch (e) {
-        debugPrint('Errore salvataggio zona cloud Dolore: $e');
-      }
-    }
+    _archivio.tipoDolore = _tipoDoloreSelezionato;
+    await _archivio.impostaZona(zona);
   }
 
-  Future<void> _salvaTipoDoloreSelezionato(String tipo) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_tipoDoloreKey, tipo);
-
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      try {
-        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-          'app_state': {
-            'tipo_dolore': tipo,
-            'updated_at': FieldValue.serverTimestamp(),
-          },
-        }, SetOptions(merge: true));
-      } catch (e) {
-        debugPrint('Errore salvataggio tipo dolore cloud: $e');
-      }
-    }
-  }
+  Future<void> _salvaTipoDoloreSelezionato(String tipo) => _archivio.impostaTipoDolore(tipo);
 
   String _etichettaConfidenza(int valore) {
     if (valore >= 70) return 'Alta';

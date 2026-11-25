@@ -6,10 +6,10 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/allenamento.dart';
 import '../services/api_esercizi.dart';
+import '../services/archivio_atleta.dart';
 import '../services/carichi.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -22,6 +22,7 @@ class _HomeScreenState extends State<HomeScreen> {
   int allenamentiTotali = 0;
   Allenamento? ultimoAllenamento;
   bool _isLoading = true;
+  final ArchivioAtleta _archivio = ArchivioAtleta.instance;
   Map<String, double> tuttiIPR = {};
   List<String> eserciziTracciati = [];
   List<String> _tuttiNomiDatabase = [];
@@ -78,28 +79,14 @@ class _HomeScreenState extends State<HomeScreen> {
       eserciziTracciati = List.from(prDiDefault);
     }
 
-    final String? storicoSalvato = prefs.getString('storico_salvato');
-    
-    final String? prGlobaliJson = prefs.getString('personal_records');
-    tuttiIPR.clear();
-    if (prGlobaliJson != null) {
-      Map<String, dynamic> dec = jsonDecode(prGlobaliJson);
-      dec.forEach((k, v) {
-        if (v is num) {
-          tuttiIPR[k] = v.toDouble();
-        } else {
-          final parsed = double.tryParse(v.toString().replaceAll(',', '.'));
-          if (parsed != null) {
-            tuttiIPR[k] = parsed;
-          }
-        }
-      });
-    }
+    await _archivio.carica();
+    final prSalvati = await _archivio.prLocali();
+    tuttiIPR
+      ..clear()
+      ..addAll(prSalvati);
 
-    if (storicoSalvato != null) {
-      final List<dynamic> jsonDecodificato = jsonDecode(storicoSalvato);
-      final storico = jsonDecodificato.map((e) => Allenamento.fromJson(e)).toList();
-      
+    {
+      final storico = _archivio.storico;
       if (storico.isNotEmpty) {
         final allenamentiVeri = storico.where((a) => !a.scheda.nome.contains('🏆 TEST PR')).toList()
           ..sort((a, b) => a.data.compareTo(b.data));
@@ -133,26 +120,16 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       }
     }
-    _sincronizzaPRConCloud(tuttiIPR);
+    // Nel cloud vanno solo i PR salvati: i massimi ricavati dallo storico
+    // (serie più pesante a qualsiasi n. di ripetizioni) non sono 1RM e non
+    // devono finire nei calcoli %1RM delle altre schermate.
+    _archivio.salvaPr(const {});
     if (mounted) setState(() { _isLoading = false; });
   }
 
   Future<void> _salvaTracciati() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('esercizi_tracciati_pr', jsonEncode(eserciziTracciati));
-  }
-
-  Future<void> _sincronizzaPRConCloud(Map<String, double> pr) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-    try {
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-        'personal_records': pr, 
-        'ultimo_aggiornamento_pr': DateTime.now().toIso8601String(),
-      }, SetOptions(merge: true));
-    } catch (e) {
-      debugPrint("Errore sync PR: $e");
-    }
   }
 
   void _mostraAggiungiPR() {
@@ -207,13 +184,12 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _eseguiBackup() async {
     showDialog(context: context, barrierDismissible: false, builder: (context) => const Center(child: CircularProgressIndicator(color: Colors.deepOrange)));
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final String schedeJson = prefs.getString('schede_salvate') ?? '[]';
-      final String storicoJson = prefs.getString('storico_salvato') ?? '[]';
-      final String prJson = prefs.getString('personal_records') ?? '{}';
-
+      await _archivio.carica();
       Map<String, dynamic> datiBackup = {
-        'schede': jsonDecode(schedeJson), 'storico': jsonDecode(storicoJson), 'carichi': jsonDecode(prJson), 'data_backup': DateTime.now().toIso8601String(),
+        'schede': _archivio.schede.map((s) => s.toJson()).toList(),
+        'storico': _archivio.storico.map((a) => a.toJson()).toList(),
+        'carichi': await _archivio.prLocali(),
+        'data_backup': DateTime.now().toIso8601String(),
       };
 
       String jsonString = jsonEncode(datiBackup);
@@ -247,10 +223,11 @@ class _HomeScreenState extends State<HomeScreen> {
         Map<String, dynamic> datiImportati = jsonDecode(contenuto);
 
         if (datiImportati.containsKey('schede') && datiImportati.containsKey('storico')) {
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setString('schede_salvate', jsonEncode(datiImportati['schede']));
-          await prefs.setString('storico_salvato', jsonEncode(datiImportati['storico']));
-          if (datiImportati.containsKey('carichi')) await prefs.setString('personal_records', jsonEncode(datiImportati['carichi']));
+          await _archivio.importaBackup(
+            schede: datiImportati['schede'] as List,
+            storico: datiImportati['storico'] as List,
+            personalRecords: datiImportati['carichi'],
+          );
           await _caricaDati();
           if (!mounted) return;
           Navigator.pop(context); 
