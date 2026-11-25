@@ -16,7 +16,7 @@ import '../models/esercizio.dart';
 import '../services/ai_service.dart';
 import '../services/dizionario_esercizi.dart';
 import '../services/dolore_data.dart';
-import '../services/workload_calculator.dart';
+import '../services/carichi.dart';
 import 'dettaglio_scheda_screen.dart';
 import 'storico_screen.dart';
 import 'crea_scheda.dart';
@@ -45,70 +45,6 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
   bool _isLoading = true;
 
   String _zonaStretchingSelezionata = 'Lombare';
-
-  String _norm(String value) {
-    return value
-        .toLowerCase()
-        .trim()
-        .replaceAll('à', 'a')
-        .replaceAll('è', 'e')
-        .replaceAll('é', 'e')
-        .replaceAll('ì', 'i')
-        .replaceAll('ò', 'o')
-        .replaceAll('ù', 'u')
-        .replaceAll(RegExp(r'[^a-z0-9\s]'), ' ')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
-  }
-
-  String _big3Key(String nome) {
-    final n = _norm(nome);
-    final isPancaBilancierePresaMedia = n.contains('panca') && n.contains('bilanciere') && n.contains('presa media');
-    final isSquatCompletoBilanciere = n.contains('squat') && n.contains('completo') && n.contains('bilanciere');
-    final isStaccoBilanciere = n.contains('stacco') && n.contains('bilanciere');
-    final isStaccoConventional = n.contains('conventional') && n.contains('deadlift');
-    if (n.contains('panca piana') || n.contains('bench press') || n == 'panca' || isPancaBilancierePresaMedia) return 'panca piana';
-    if (n == 'squat' || n.contains('back squat') || isSquatCompletoBilanciere) return 'squat';
-    if (n.contains('stacco da terra') || n.contains('deadlift') || n == 'stacco' || isStaccoBilanciere || isStaccoConventional) return 'stacco da terra';
-    return '';
-  }
-
-  List<String> _prAliasesForBig3(String canonicalDisplayName) {
-    final n = _norm(canonicalDisplayName);
-    if (n == 'panca piana') {
-      return const [
-        'Panca Piana',
-        'Panca piana con bilanciere(presa media)',
-        'Panca piana con bilanciere - presa media',
-        'Panca piana con bilanciere (presa media)',
-      ];
-    }
-    if (n == 'squat') {
-      return const [
-        'Squat',
-        'Squat Completo con Bilanciere',
-        'Squat completo con bilanciere',
-      ];
-    }
-    if (n == 'stacco da terra') {
-      return const [
-        'Stacco da Terra',
-        'Stacco da Terra con Bilanciere',
-        'Stacco da terra con bilanciere',
-      ];
-    }
-    return [canonicalDisplayName];
-  }
-
-  double? _findPr(Map<String, double> prs, String exerciseName) {
-    final key = _big3Key(exerciseName);
-    if (key.isEmpty) return null;
-    for (final entry in prs.entries) {
-      final k = _norm(entry.key);
-      if (k == key || k.contains(key) || key.contains(k)) return entry.value;
-    }
-    return null;
-  }
 
   Future<Map<String, double>> _caricaPrAtleta() async {
     final out = <String, double>{};
@@ -142,36 +78,7 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
   }
 
   Scheda _applicaFallbackPrSuSchedaCoach(Scheda scheda, Map<String, double> prs) {
-    for (final es in scheda.esercizi) {
-      if (es.modalitaIntensita != 'percentuale') continue;
-      final perc = es.percentualeMassimale;
-      if (perc == null || perc <= 0) continue;
-
-      if (es.massimaleKg == null || es.massimaleKg! <= 0) {
-        es.massimaleKg = _findPr(prs, es.nome);
-      }
-      final rm = es.massimaleKg;
-      if (rm == null || rm <= 0) continue;
-
-      es.caricoTargetKg = WorkloadCalculator.calculateFromMaxAndPercentage(
-        oneRepMax: rm,
-        percentage: perc,
-      );
-
-      for (final s in es.serieAttive.where((s) => s.tipo != 'Avvicinamento')) {
-        final percSerie = double.tryParse(s.percentualeTarget.replaceAll(',', '.'));
-        final caricoSerie = WorkloadCalculator.calculateFromMaxAndPercentage(
-          oneRepMax: rm,
-          percentage: percSerie ?? perc,
-        );
-        if (s.percentualeTarget.trim().isEmpty) {
-          s.percentualeTarget = (percSerie ?? perc).toStringAsFixed(((percSerie ?? perc) % 1 == 0) ? 0 : 1);
-        }
-        if (s.peso.trim().isEmpty) {
-          s.peso = caricoSerie.toStringAsFixed(1);
-        }
-      }
-    }
+    Carichi.applicaPrAScheda(scheda, prs);
     return scheda;
   }
 
@@ -181,11 +88,8 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
       for (final es in scheda.esercizi) {
         if (es.modalitaIntensita != 'percentuale') continue;
         if (es.massimaleKg != null && es.massimaleKg! > 0) continue;
-
-        final key = _big3Key(es.nome);
-        if (key == 'panca piana') out.add('Panca Piana');
-        if (key == 'squat') out.add('Squat');
-        if (key == 'stacco da terra') out.add('Stacco da Terra');
+        final lift = Carichi.riconosciBig3(es.nome);
+        if (lift != null) out.add(lift.nome);
       }
     }
     return out;
@@ -250,9 +154,7 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
         final v = controllers[nome]!.text.replaceAll(',', '.').trim();
         final parsed = double.tryParse(v);
         if (parsed != null && parsed > 0) {
-          for (final alias in _prAliasesForBig3(nome)) {
-            records[alias] = parsed;
-          }
+          records.addAll(Carichi.recordPerPr(nome, parsed));
         }
       }
 

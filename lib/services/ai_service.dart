@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 import '../models/scheda.dart';
 import '../services/api_esercizi.dart'; 
 import '../services/dizionario_esercizi.dart';
+import '../services/carichi.dart';
 import '../services/workload_calculator.dart';
 
 class AiProxyException implements Exception {
@@ -177,45 +178,15 @@ class AiService {
     return int.tryParse(value.toString()) ?? fallback;
   }
 
-  static bool _isBigThreeLift(String name) {
-    final n = _normalizza(name);
-    final isPancaBilancierePresaMedia = n.contains('panca') && n.contains('bilanciere') && n.contains('presa media');
-    final isSquatCompletoBilanciere = n.contains('squat') && n.contains('completo') && n.contains('bilanciere');
-    return n.contains('panca piana') ||
-        n.contains('bench press') ||
-        isPancaBilancierePresaMedia ||
-        n == 'squat' ||
-        n.contains('back squat') ||
-      isSquatCompletoBilanciere ||
-        n.contains('stacco da terra') ||
-        n.contains('deadlift');
-  }
 
-  static String _canonicalBigThreeKey(String name) {
-    final n = _normalizza(name);
-    final isPancaBilancierePresaMedia = n.contains('panca') && n.contains('bilanciere') && n.contains('presa media');
-    final isSquatCompletoBilanciere = n.contains('squat') && n.contains('completo') && n.contains('bilanciere');
-    if (n.contains('panca piana') || n.contains('bench press') || isPancaBilancierePresaMedia) return 'panca piana';
-    if (n == 'squat' || n.contains('back squat') || isSquatCompletoBilanciere) return 'squat';
-    if (n.contains('stacco da terra') || n.contains('deadlift')) return 'stacco da terra';
-    return '';
-  }
 
   static double? _findOneRmFromPersonalRecords(Map<String, dynamic> personalRecords, String exerciseName) {
-    final canonical = _canonicalBigThreeKey(exerciseName);
-    if (canonical.isEmpty) return null;
-
+    final prs = <String, double>{};
     for (final entry in personalRecords.entries) {
-      final key = _normalizza(entry.key);
       final value = _toDoubleOrNull(entry.value);
-      if (value == null || value <= 0) continue;
-
-      if (key == canonical || key.contains(canonical) || canonical.contains(key)) {
-        return value;
-      }
+      if (value != null) prs[entry.key] = value;
     }
-
-    return null;
+    return Carichi.trovaPr(prs, exerciseName);
   }
 
   static List<Map<String, dynamic>> applyPersonalRecordsFallbackForTest(
@@ -234,7 +205,7 @@ class AiService {
         final percentuale = _toDoubleOrNull(e['percentualeMassimale']);
         var massimale = _toDoubleOrNull(e['massimaleKg']);
 
-        if ((massimale == null || massimale <= 0) && _isBigThreeLift((e['nome'] ?? '').toString())) {
+        if ((massimale == null || massimale <= 0) && Carichi.riconosciBig3((e['nome'] ?? '').toString()) != null) {
           massimale = _findOneRmFromPersonalRecords(personalRecords, (e['nome'] ?? '').toString());
           if (massimale != null) {
             e['massimaleKg'] = massimale;
@@ -276,26 +247,6 @@ class AiService {
     }
   }
 
-  static double? _extractPercentFromText(String text) {
-    final candidates = <RegExp>[
-      RegExp(r'(\d{1,3}(?:[\.,]\d+)?)\s*%'),
-      RegExp(r'(\d{1,3}(?:[\.,]\d+)?)\s*percento', caseSensitive: false),
-      RegExp(r'(\d{1,3}(?:[\.,]\d+)?)\s*per\s*cento', caseSensitive: false),
-      RegExp(r'al\s*(\d{1,3}(?:[\.,]\d+)?)\b', caseSensitive: false),
-      RegExp(r'at\s*(\d{1,3}(?:[\.,]\d+)?)\b', caseSensitive: false),
-    ];
-
-    for (final regex in candidates) {
-      final match = regex.firstMatch(text);
-      if (match == null) continue;
-      final parsed = _toDoubleOrNull(match.group(1));
-      if (parsed != null && parsed > 0 && parsed <= 110) {
-        return parsed;
-      }
-    }
-
-    return null;
-  }
 
   static double? _extractOneRmFromText(String text) {
     final rmMatch = RegExp(
@@ -330,8 +281,8 @@ class AiService {
                   es['descrizione'],
                 ].where((v) => v != null).map((v) => v.toString()).join(' ');
 
-                final bigThree = _isBigThreeLift((es['nome'] ?? '').toString());
-                final percentualeDaTesto = _extractPercentFromText(infoTestuale);
+                final bigThree = Carichi.riconosciBig3((es['nome'] ?? '').toString()) != null;
+                final percentualeDaTesto = Carichi.estraiPercentualeDaTesto(infoTestuale);
                 final massimaleDaTesto = _extractOneRmFromText(infoTestuale);
                 final percentualeFinale = percentuale ?? (bigThree ? percentualeDaTesto : null);
                 final massimaleFinale = massimale ?? (bigThree ? massimaleDaTesto : null);

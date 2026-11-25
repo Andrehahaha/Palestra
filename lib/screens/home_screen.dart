@@ -10,7 +10,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/allenamento.dart';
 import '../services/api_esercizi.dart';
-import '../services/dizionario_esercizi.dart';
+import '../services/carichi.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -30,76 +30,13 @@ class _HomeScreenState extends State<HomeScreen> {
     'Panca Piana', 'Squat', 'Stacco da Terra', 'Military Press',
   ];
 
-  String _norm(String value) {
-    return value
-        .toLowerCase()
-        .trim()
-        .replaceAll('à', 'a')
-        .replaceAll('è', 'e')
-        .replaceAll('é', 'e')
-        .replaceAll('ì', 'i')
-        .replaceAll('ò', 'o')
-        .replaceAll('ù', 'u')
-        .replaceAll(RegExp(r'[^a-z0-9\s]'), ' ')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
-  }
-
-  String _canonicalExerciseName(String rawName) {
-    final translated = DizionarioEsercizi.daIngleseAItaliano[rawName] ?? rawName;
-    final n = _norm(translated);
-
-    if (n.contains('panca piana') || (n.contains('panca') && n.contains('bilanciere'))) {
-      return 'Panca Piana';
-    }
-    if (n == 'squat' || (n.contains('squat') && n.contains('bilanciere'))) {
-      return 'Squat';
-    }
-    if (n.contains('stacco da terra') || n.contains('deadlift') || (n.contains('stacco') && n.contains('bilanciere'))) {
-      return 'Stacco da Terra';
-    }
-    return translated.trim();
-  }
-
-  List<String> _prAliasesForExercise(String canonicalName) {
-    final n = _norm(canonicalName);
-    if (n == 'panca piana') {
-      return const [
-        'Panca Piana',
-        'Panca piana con bilanciere(presa media)',
-        'Panca piana con bilanciere - presa media',
-        'Panca piana con bilanciere (presa media)',
-      ];
-    }
-    if (n == 'squat') {
-      return const [
-        'Squat',
-        'Squat Completo con Bilanciere',
-        'Squat completo con bilanciere',
-      ];
-    }
-    if (n == 'stacco da terra') {
-      return const [
-        'Stacco da Terra',
-        'Stacco da Terra con Bilanciere',
-        'Stacco da terra con bilanciere',
-        'Deadlift',
-        'Conventional Deadlift',
-      ];
-    }
-    return [canonicalName];
-  }
-
   double _readPrValueForExercise(String displayExerciseName) {
-    final canonical = _canonicalExerciseName(displayExerciseName);
-    final aliases = _prAliasesForExercise(canonical).map(_norm).toList();
-
+    final big3 = Carichi.trovaPr(tuttiIPR, displayExerciseName);
+    if (big3 != null) return big3;
+    final target = Carichi.normalizza(Carichi.nomeCanonico(displayExerciseName));
     double best = 0.0;
     for (final entry in tuttiIPR.entries) {
-      final keyNorm = _norm(entry.key);
-      if (aliases.any((a) => keyNorm == a || keyNorm.contains(a) || a.contains(keyNorm))) {
-        if (entry.value > best) best = entry.value;
-      }
+      if (Carichi.normalizza(entry.key) == target && entry.value > best) best = entry.value;
     }
     return best;
   }
@@ -117,7 +54,7 @@ class _HomeScreenState extends State<HomeScreen> {
     
     nomiTrovati.addAll(datiJson.map((e) {
       String n = e['nome'].toString();
-      return _canonicalExerciseName(n);
+      return Carichi.nomeCanonico(n);
     }));
     
     final prefs = await SharedPreferences.getInstance();
@@ -126,7 +63,7 @@ class _HomeScreenState extends State<HomeScreen> {
       List<dynamic> customList = jsonDecode(customSalvati);
       nomiTrovati.addAll(customList.map((e) {
         String n = e['nome'].toString();
-        return _canonicalExerciseName(n);
+        return Carichi.nomeCanonico(n);
       }));
     }
     if (mounted) setState(() { _tuttiNomiDatabase = nomiTrovati.toSet().toList(); });
@@ -179,8 +116,7 @@ class _HomeScreenState extends State<HomeScreen> {
               if (serie.isCompletata && serie.peso.isNotEmpty && serie.tipo != 'Avvicinamento') {
                 double pesoCorrente = double.tryParse(serie.peso.replaceAll(',', '.')) ?? 0.0;
                 if (pesoCorrente > 0) {
-                  String nomePulito = (DizionarioEsercizi.daIngleseAItaliano[esercizio.nome] ?? esercizio.nome).trim();
-                  nomePulito = _canonicalExerciseName(nomePulito);
+                  final nomePulito = Carichi.nomeCanonico(esercizio.nome);
 
                   var matches = tuttiIPR.keys.where((k) => k.toLowerCase() == nomePulito.toLowerCase());
                   String? keyEsistente = matches.isNotEmpty ? matches.first : null;
@@ -418,7 +354,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), itemCount: eserciziTracciati.length,
                       separatorBuilder: (context, index) => const Divider(height: 1, color: Colors.black26),
                       itemBuilder: (context, index) {
-                        String nomeEsercizio = _canonicalExerciseName(eserciziTracciati[index]);
+                        String nomeEsercizio = Carichi.nomeCanonico(eserciziTracciati[index]);
 
                         double maxPeso = _readPrValueForExercise(nomeEsercizio);
                         String pesoMostrato = maxPeso == 0.0 ? '--' : (maxPeso == maxPeso.truncateToDouble() ? maxPeso.toInt().toString() : maxPeso.toString());

@@ -15,9 +15,8 @@ import '../models/serie.dart';
 import 'crea_esercizio.dart';
 import 'settimana_successiva_screen.dart';
 import '../services/api_esercizi.dart';
-import '../services/dizionario_esercizi.dart';
 import '../services/athlete_progress_service.dart';
-import '../services/workload_calculator.dart';
+import '../services/carichi.dart';
 
 // ============================================================================
 // SCHERMATA DETTAGLIO ALLENAMENTO (CORE DELL'APP)
@@ -49,7 +48,7 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
   }
 
   String get _legacySchedaWeekHistoryKey {
-    final n = _normalizzaTesto(widget.scheda.nome);
+    final n = Carichi.normalizza(widget.scheda.nome);
     return n.replaceAll(' ', '_');
   }
 
@@ -344,138 +343,6 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
     }
   }
 
-  String _normalizzaTesto(String value) {
-    return value
-        .toLowerCase()
-        .trim()
-        .replaceAll('à', 'a')
-        .replaceAll('è', 'e')
-        .replaceAll('é', 'e')
-        .replaceAll('ì', 'i')
-        .replaceAll('ò', 'o')
-        .replaceAll('ù', 'u')
-        .replaceAll(RegExp(r'[^a-z0-9\s]'), ' ')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
-  }
-
-  String _big3Key(String nome) {
-    final n = _normalizzaTesto(_traduciNome(nome));
-    final isPancaBilancierePresaMedia = n.contains('panca') && n.contains('bilanciere') && n.contains('presa media');
-    final isSquatCompletoBilanciere = n.contains('squat') && n.contains('completo') && n.contains('bilanciere');
-    final isStaccoBilanciere = n.contains('stacco') && n.contains('bilanciere');
-    final isStaccoConventional = n.contains('conventional') && n.contains('deadlift');
-    if (n.contains('panca piana') || n.contains('bench press') || n == 'panca' || isPancaBilancierePresaMedia) return 'Panca Piana';
-    if (n == 'squat' || n.contains('back squat') || isSquatCompletoBilanciere) return 'Squat';
-    if (n.contains('stacco da terra') || n.contains('deadlift') || n == 'stacco' || isStaccoBilanciere || isStaccoConventional) return 'Stacco da Terra';
-    return '';
-  }
-
-  List<String> _prAliasesForBig3(String canonicalDisplayName) {
-    final n = _normalizzaTesto(canonicalDisplayName);
-    if (n == 'panca piana') {
-      return const [
-        'Panca Piana',
-        'Panca piana con bilanciere(presa media)',
-        'Panca piana con bilanciere - presa media',
-        'Panca piana con bilanciere (presa media)',
-      ];
-    }
-    if (n == 'squat') {
-      return const [
-        'Squat',
-        'Squat Completo con Bilanciere',
-        'Squat completo con bilanciere',
-      ];
-    }
-    if (n == 'stacco da terra') {
-      return const [
-        'Stacco da Terra',
-        'Stacco da Terra con Bilanciere',
-        'Stacco da terra con bilanciere',
-      ];
-    }
-    return [canonicalDisplayName];
-  }
-
-  double? _toDoubleOrNull(dynamic value) {
-    if (value == null) return null;
-    if (value is num) return value.toDouble();
-    final raw = value.toString().replaceAll(',', '.').trim();
-    if (raw.isEmpty) return null;
-    return double.tryParse(raw);
-  }
-
-  double? _parsePercentInput(String raw) {
-    final cleaned = raw.replaceAll('%', '').replaceAll(',', '.').trim();
-    if (cleaned.isEmpty) return null;
-    return double.tryParse(cleaned);
-  }
-
-  bool _isAlmostEqual(double a, double b, {double tolerance = 0.26}) {
-    return (a - b).abs() <= tolerance;
-  }
-
-  double? _expectedKgForSerie(Esercizio esercizio, Serie serie) {
-    if (esercizio.modalitaIntensita != 'percentuale') return null;
-    final rm = esercizio.massimaleKg;
-    if (rm == null || rm <= 0 || serie.tipo == 'Avvicinamento') return null;
-
-    final perc = _parsePercentInput(serie.percentualeTarget) ?? esercizio.percentualeMassimale;
-    if (perc == null || perc <= 0) return null;
-
-    return WorkloadCalculator.calculateFromMaxAndPercentage(
-      oneRepMax: rm,
-      percentage: perc,
-    );
-  }
-
-  double? _extractPercentFromText(String text) {
-    final t = _normalizzaTesto(text);
-    final patterns = <RegExp>[
-      RegExp(r'(\d{1,3}(?:[\.,]\d+)?)\s*%'),
-      RegExp(r'(\d{1,3}(?:[\.,]\d+)?)\s*percento'),
-      RegExp(r'(\d{1,3}(?:[\.,]\d+)?)\s*per\s*cento'),
-      RegExp(r'al\s*(\d{1,3}(?:[\.,]\d+)?)\b'),
-      RegExp(r'at\s*(\d{1,3}(?:[\.,]\d+)?)\b'),
-    ];
-
-    for (final p in patterns) {
-      final m = p.firstMatch(t);
-      if (m == null) continue;
-      final parsed = _toDoubleOrNull(m.group(1));
-      if (parsed != null && parsed > 0 && parsed <= 110) return parsed;
-    }
-    return null;
-  }
-
-  double? _inferPercentuale(Esercizio esercizio) {
-    final existing = esercizio.percentualeMassimale;
-    if (existing != null && existing > 0) return existing;
-
-    for (final s in esercizio.serieAttive.where((x) => x.tipo != 'Avvicinamento')) {
-      final p = _toDoubleOrNull(s.percentualeTarget);
-      if (p != null && p > 0 && p <= 110) return p;
-    }
-
-    final text = '${esercizio.ripetizioni} ${esercizio.note ?? ''}';
-    return _extractPercentFromText(text);
-  }
-
-  double? _findPr(Map<String, double> prs, String exerciseName) {
-    final key = _big3Key(exerciseName);
-    if (key.isEmpty) return null;
-
-    final normKey = _normalizzaTesto(key);
-    for (final entry in prs.entries) {
-      final k = _normalizzaTesto(entry.key);
-      if (k == normKey || k.contains(normKey) || normKey.contains(k)) {
-        return entry.value;
-      }
-    }
-    return null;
-  }
-
   Future<Map<String, double>> _caricaPrAtleta() async {
     final out = <String, double>{};
     final prefs = await SharedPreferences.getInstance();
@@ -516,56 +383,16 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
     final prs = await _caricaPrAtleta();
     if (prs.isEmpty || !mounted) return;
 
-    bool changed = false;
-
+    var changed = false;
     setState(() {
-      for (final es in widget.scheda.esercizi) {
-        if (es.modalitaIntensita != 'percentuale') continue;
-
-        if (es.massimaleKg == null || es.massimaleKg! <= 0) {
-          es.massimaleKg = _findPr(prs, es.nome);
-        }
-        final perc = _inferPercentuale(es);
-        if (es.percentualeMassimale == null && perc != null) {
-          es.percentualeMassimale = perc;
-          changed = true;
-        }
-
-        final rm = es.massimaleKg;
-        final percFinale = es.percentualeMassimale;
-        if (rm == null || rm <= 0 || percFinale == null || percFinale <= 0) continue;
-
-        es.caricoTargetKg = WorkloadCalculator.calculateFromMaxAndPercentage(
-          oneRepMax: rm,
-          percentage: percFinale,
-        );
-        changed = true;
-
-        for (final serie in es.serieAttive.where((s) => s.tipo != 'Avvicinamento')) {
-          final percSerie = _toDoubleOrNull(serie.percentualeTarget) ?? percFinale;
-          if (serie.percentualeTarget.trim().isEmpty) {
-            serie.percentualeTarget = percSerie.toStringAsFixed(percSerie % 1 == 0 ? 0 : 1);
-          }
-
-          if (serie.peso.trim().isEmpty) {
-            final carico = WorkloadCalculator.calculateFromMaxAndPercentage(
-              oneRepMax: rm,
-              percentage: percSerie,
-            );
-            serie.peso = carico.toStringAsFixed(1);
-          }
-        }
-      }
+      changed = Carichi.applicaPrAScheda(widget.scheda, prs);
     });
-
-    if (changed) {
-      _scheduleBozzaSave();
-    }
+    if (changed) _scheduleBozzaSave();
   }
 
   Future<void> _impostaPrPersonale(Esercizio esercizio) async {
-    final key = _big3Key(esercizio.nome);
-    if (key.isEmpty) return;
+    final lift = Carichi.riconosciBig3(esercizio.nome);
+    if (lift == null) return;
 
     final controller = TextEditingController(
       text: esercizio.massimaleKg != null ? esercizio.massimaleKg!.toStringAsFixed(1) : '',
@@ -574,7 +401,7 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
     final conferma = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Imposta PR per $key'),
+        title: Text('Imposta PR per ${lift.nome}'),
         content: TextField(
           controller: controller,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -605,9 +432,7 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
         records.addAll(Map<String, dynamic>.from(decoded));
       }
     }
-    for (final alias in _prAliasesForBig3(key)) {
-      records[alias] = value;
-    }
+    records.addAll(Carichi.recordPerPr(lift.nome, value));
     await prefs.setString('personal_records', jsonEncode(records));
 
     final user = FirebaseAuth.instance.currentUser;
@@ -620,34 +445,15 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
       } catch (_) {}
     }
 
-    final perc = esercizio.percentualeMassimale ?? _inferPercentuale(esercizio);
-    if (perc != null && perc > 0) {
-      final caricoDefault = WorkloadCalculator.calculateFromMaxAndPercentage(
-        oneRepMax: value,
-        percentage: perc,
-      );
-      setState(() {
-        esercizio.massimaleKg = value;
-        esercizio.percentualeMassimale ??= perc;
-        esercizio.caricoTargetKg = caricoDefault;
-        for (final serie in esercizio.serieAttive.where((s) => s.tipo != 'Avvicinamento')) {
-          final percSerie = double.tryParse(serie.percentualeTarget.replaceAll(',', '.'));
-          final caricoSerie = WorkloadCalculator.calculateFromMaxAndPercentage(
-            oneRepMax: value,
-            percentage: percSerie ?? perc,
-          );
-          if (serie.percentualeTarget.trim().isEmpty) {
-            serie.percentualeTarget = (percSerie ?? perc).toStringAsFixed(((percSerie ?? perc) % 1 == 0) ? 0 : 1);
-          }
-          if (serie.peso.trim().isEmpty) serie.peso = caricoSerie.toStringAsFixed(1);
-        }
-      });
-      _scheduleBozzaSave();
-    }
+    if (!mounted) return;
+    setState(() {
+      Carichi.impostaMassimale(esercizio, value);
+    });
+    _scheduleBozzaSave();
   }
 
   String _macroTagDaCategoria(String categoria) {
-    final c = _normalizzaTesto(categoria);
+    final c = Carichi.normalizza(categoria);
 
     if (c.contains('petto') || c.contains('pettoral')) return 'petto';
     if (c.contains('dorso') || c.contains('schiena') || c.contains('lombar') || c.contains('trapez') || c.contains('lat')) return 'schiena';
@@ -663,11 +469,11 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
     final tag = <String>{};
 
     for (final esercizioScheda in widget.scheda.esercizi) {
-      final nomeScheda = _normalizzaTesto(_traduciNome(esercizioScheda.nome));
+      final nomeScheda = Carichi.normalizza(Carichi.traduci(esercizioScheda.nome));
 
       Map<String, dynamic>? match;
       for (final db in _databaseEsercizi) {
-        final nomeDb = _normalizzaTesto((db['nome'] ?? '').toString());
+        final nomeDb = Carichi.normalizza((db['nome'] ?? '').toString());
         if (nomeDb == nomeScheda) {
           match = db;
           break;
@@ -684,8 +490,8 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
   }
 
   int _limiteStretching(Set<String> tagScheda) {
-    final nomeScheda = _normalizzaTesto(widget.scheda.nome);
-    final categoriaScheda = _normalizzaTesto(widget.scheda.categoria);
+    final nomeScheda = Carichi.normalizza(widget.scheda.nome);
+    final categoriaScheda = Carichi.normalizza(widget.scheda.categoria);
     final isFullBody = nomeScheda.contains('full body') ||
         nomeScheda.contains('total body') ||
         categoriaScheda.contains('full body') ||
@@ -766,17 +572,6 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
     );
   }
 
-  // 👇 MOTORE DI TRADUZIONE BLINDATO (Ignora maiuscole/minuscole)
-  String _traduciNome(String nomeOriginale) {
-    String lower = nomeOriginale.toLowerCase().trim();
-    
-    for (var entry in DizionarioEsercizi.daIngleseAItaliano.entries) {
-      if (entry.key.toLowerCase().trim() == lower || entry.value.toLowerCase().trim() == lower) {
-        return entry.value; 
-      }
-    }
-    return nomeOriginale;
-  }
 
   // 👇 SALVATAGGIO CON NOTE
   Future<void> _salvaAllenamentoIbrido(String noteFineAllenamento) async {
@@ -862,13 +657,13 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
   }
 
   Map<String, String>? _getDatiPrecedenti(String nomeEs, int indiceSerie) {
-    String nomeTargetIta = _traduciNome(nomeEs).toLowerCase().trim();
+    String nomeTargetIta = Carichi.traduci(nomeEs).toLowerCase().trim();
     final storicoRecentePrima = List<Allenamento>.from(widget.storico)
       ..sort((a, b) => b.data.compareTo(a.data));
 
     for (var allenamento in storicoRecentePrima) {
       for (var es in allenamento.scheda.esercizi) {
-        String nomeStoricoIta = _traduciNome(es.nome).toLowerCase().trim();
+        String nomeStoricoIta = Carichi.traduci(es.nome).toLowerCase().trim();
         if (nomeTargetIta == nomeStoricoIta && es.serieAttive.length > indiceSerie) {
           var seriePrecedente = es.serieAttive[indiceSerie];
           if (seriePrecedente.peso.isNotEmpty || seriePrecedente.ripetizioniFatte.isNotEmpty) {
@@ -900,13 +695,13 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
   }
 
   void _mostraStoricoEsercizio(String nomeEs) {
-    String nomeTargetIta = _traduciNome(nomeEs).toLowerCase().trim();
+    String nomeTargetIta = Carichi.traduci(nomeEs).toLowerCase().trim();
     List<Allenamento> storicoEs = [];
     final storicoRecentePrima = List<Allenamento>.from(widget.storico)
       ..sort((a, b) => b.data.compareTo(a.data));
     
     for (var allenamento in storicoRecentePrima) {
-      if (allenamento.scheda.esercizi.any((e) => _traduciNome(e.nome).toLowerCase().trim() == nomeTargetIta)) {
+      if (allenamento.scheda.esercizi.any((e) => Carichi.traduci(e.nome).toLowerCase().trim() == nomeTargetIta)) {
         storicoEs.add(allenamento);
         if (storicoEs.length >= 5) break; 
       }
@@ -932,7 +727,7 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
                       itemCount: storicoEs.length,
                       itemBuilder: (context, i) {
                         var all = storicoEs[i];
-                        var es = all.scheda.esercizi.firstWhere((e) => _traduciNome(e.nome).toLowerCase().trim() == nomeTargetIta);
+                        var es = all.scheda.esercizi.firstWhere((e) => Carichi.traduci(e.nome).toLowerCase().trim() == nomeTargetIta);
                         
                         String dataStr = '${all.data.day}/${all.data.month}/${all.data.year}';
                         return Card(
@@ -1495,12 +1290,12 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
     bool nextIsSuperSet = index < widget.scheda.esercizi.length - 1 && widget.scheda.esercizi[index + 1].tecniche.any((t) => t.toLowerCase().contains('super'));
 
     // 👇 RICERCA NEL DATABASE BLINDATA (Ignora maiuscole)
-    String nomeTargetIta = _traduciNome(esercizio.nome).toLowerCase().trim();
+    String nomeTargetIta = Carichi.traduci(esercizio.nome).toLowerCase().trim();
     final matchDb = _databaseEsercizi.cast<Map<String, dynamic>?>().firstWhere(
       (e) {
         if (e == null) return false;
         String dbNome = e['nome'].toString().toLowerCase().trim();
-        String dbNomeTradotto = _traduciNome(e['nome'].toString()).toLowerCase().trim();
+        String dbNomeTradotto = Carichi.traduci(e['nome'].toString()).toLowerCase().trim();
         String targetOriginale = esercizio.nome.toLowerCase().trim();
 
         return dbNomeTradotto == nomeTargetIta || 
@@ -1703,8 +1498,8 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
                     int sIdx = entry.key;
                     Serie serie = entry.value;
                     final prev = _getDatiPrecedenti(esercizio.nome, sIdx);
-                    final expectedKg = _expectedKgForSerie(esercizio, serie);
-                    final expectedPerc = _parsePercentInput(serie.percentualeTarget) ?? esercizio.percentualeMassimale;
+                    final expectedKg = Carichi.kgAttesoSerie(esercizio, serie);
+                    final expectedPerc = Carichi.parsePercentuale(serie.percentualeTarget) ?? esercizio.percentualeMassimale;
                     return Container(
                       margin: const EdgeInsets.only(bottom: 6),
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -1762,30 +1557,7 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
                                 style: const TextStyle(color: Colors.amber, fontSize: 14),
                                 onChanged: (v) {
                                   if (esercizio.modalitaIntensita == 'percentuale') {
-                                    final rm = esercizio.massimaleKg;
-                                    final oldPerc = _parsePercentInput(serie.percentualeTarget) ?? esercizio.percentualeMassimale;
-                                    final oldExpected = (rm != null && rm > 0 && oldPerc != null && oldPerc > 0 && serie.tipo != 'Avvicinamento')
-                                        ? WorkloadCalculator.calculateFromMaxAndPercentage(oneRepMax: rm, percentage: oldPerc)
-                                        : null;
-
-                                    final parsed = _parsePercentInput(v);
-                                    serie.percentualeTarget = parsed != null
-                                        ? parsed.toStringAsFixed(parsed % 1 == 0 ? 0 : 1)
-                                        : v.replaceAll('%', '').trim();
-
-                                    if (rm != null && rm > 0 && parsed != null && parsed > 0 && serie.tipo != 'Avvicinamento') {
-                                      final newExpected = WorkloadCalculator.calculateFromMaxAndPercentage(
-                                        oneRepMax: rm,
-                                        percentage: parsed,
-                                      );
-                                      final currentPeso = _toDoubleOrNull(serie.peso);
-                                      final shouldAutoUpdatePeso = serie.peso.trim().isEmpty ||
-                                          (oldExpected != null && currentPeso != null && _isAlmostEqual(currentPeso, oldExpected));
-
-                                      if (shouldAutoUpdatePeso) {
-                                        serie.peso = newExpected.toStringAsFixed(1);
-                                      }
-                                    }
+                                      Carichi.impostaPercentualeSerie(esercizio, serie, v);
                                   } else {
                                     serie.rpe = v;
                                   }

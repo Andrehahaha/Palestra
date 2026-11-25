@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../models/esercizio.dart';
 import '../models/scheda.dart';
+import '../services/carichi.dart';
 import '../services/workload_calculator.dart';
 
 double? _parseProgressionePercent(String raw) {
@@ -65,7 +66,7 @@ void applyProgressioneToExerciseForTest({
               )
             : null;
         final currentPeso = double.tryParse(serie.peso.replaceAll(',', '.').trim());
-        final isPesoAutoDerived = oldExpected != null && currentPeso != null && (currentPeso - oldExpected).abs() < 0.11;
+        final isPesoAutoDerived = oldExpected != null && currentPeso != null && (currentPeso - oldExpected).abs() <= Carichi.tolleranzaPesoAuto;
         final shouldUpdatePeso = serie.peso.trim().isEmpty ||
           forceRecalculateWeights ||
             incrementoPercentuale != 0 ||
