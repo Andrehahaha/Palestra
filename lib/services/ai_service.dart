@@ -4,12 +4,12 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/scheda.dart';
 import '../services/api_esercizi.dart'; 
 import '../services/dizionario_esercizi.dart';
+import '../services/archivio_atleta.dart';
 import '../services/carichi.dart';
 import '../services/workload_calculator.dart';
 
@@ -24,17 +24,132 @@ class AiProxyException implements Exception {
   String toString() => 'AiProxyException(status: $statusCode, message: $message, details: $details)';
 }
 
-class AiService {
-  static const String _aiProxyBaseUrl = String.fromEnvironment(
-    'AI_PROXY_BASE_URL',
-    defaultValue: '',
-  );
-  static String? _lastError;
+/// Esito di una chiamata AI: [valore] se riuscita, altrimenti [errore]
+/// (messaggio già pronto per l'utente).
+class EsitoAi<T> {
+  const EsitoAi.ok(T this.valore) : errore = null;
+  const EsitoAi.errore(String this.errore) : valore = null;
 
-  static String? consumeLastError() {
-    final value = _lastError;
-    _lastError = null;
-    return value;
+  final T? valore;
+  final String? errore;
+
+  bool get ok => errore == null;
+}
+
+/// Seam verso il proxy AI. Adapter: [HttpProxyAi] in produzione, un fake nei test.
+abstract interface class ProxyAi {
+  /// Dove punta il proxy, per i messaggi d'errore.
+  String get descrizione;
+
+  /// POST JSON a [endpoint]. Lancia [AiProxyException] in caso di errore.
+  Future<Map<String, dynamic>> post(String endpoint, Map<String, dynamic> payload);
+}
+
+class HttpProxyAi implements ProxyAi {
+  HttpProxyAi({String? baseUrl, http.Client? client, FirebaseAuth? auth})
+      : _baseUrl = baseUrl ?? const String.fromEnvironment('AI_PROXY_BASE_URL', defaultValue: ''),
+        _client = client,
+        _auth = auth;
+
+  final String _baseUrl;
+  final http.Client? _client;
+  final FirebaseAuth? _auth;
+
+  @override
+  String get descrizione => _baseUrl.isEmpty ? '(vuoto)' : _baseUrl;
+
+  /// URL da provare per [endpoint]: `base/endpoint` e, se la base contiene
+  /// già un path, `host/endpoint`. Un 404 fa passare al successivo.
+  List<Uri> urlCandidati(String endpoint) {
+    final base = _baseUrl.endsWith('/') ? _baseUrl.substring(0, _baseUrl.length - 1) : _baseUrl;
+    final out = <Uri>[base.endsWith('/$endpoint') ? Uri.parse(base) : Uri.parse('$base/$endpoint')];
+    final parsed = Uri.tryParse(base);
+    if (parsed != null && parsed.hasAuthority) {
+      final root = parsed.replace(path: '/$endpoint', query: null, fragment: null);
+      if (!out.contains(root)) out.add(root);
+    }
+    return out;
+  }
+
+  @override
+  Future<Map<String, dynamic>> post(String endpoint, Map<String, dynamic> payload) async {
+    if (_baseUrl.isEmpty) {
+      throw const AiProxyException('AI proxy non configurato. Imposta AI_PROXY_BASE_URL.');
+    }
+    final user = (_auth ?? FirebaseAuth.instance).currentUser;
+    if (user == null) {
+      throw const AiProxyException('Utente non autenticato.', statusCode: 401);
+    }
+
+    try {
+      // Il token in cache viene rinnovato da Firebase quando sta per scadere.
+      final idToken = await user.getIdToken();
+      final headers = {'Content-Type': 'application/json', 'Authorization': 'Bearer $idToken'};
+      final body = jsonEncode(payload);
+      final client = _client;
+      final tried = <String>[];
+
+      for (final uri in urlCandidati(endpoint)) {
+        final response = await (client == null
+                ? http.post(uri, headers: headers, body: body)
+                : client.post(uri, headers: headers, body: body))
+            .timeout(const Duration(seconds: 45));
+
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          final decoded = jsonDecode(response.body);
+          if (decoded is Map<String, dynamic>) return decoded;
+          throw const AiProxyException('Risposta proxy non valida (JSON atteso).');
+        }
+
+        tried.add('$uri -> ${response.statusCode}');
+        if (response.statusCode == 404) continue;
+
+        var backendError = response.body;
+        try {
+          final b = jsonDecode(response.body);
+          if (b is Map && b['error'] != null) backendError = b['error'].toString();
+        } catch (_) {}
+        throw AiProxyException(
+          'Proxy AI errore ${response.statusCode}',
+          statusCode: response.statusCode,
+          details: backendError,
+        );
+      }
+
+      throw AiProxyException(
+        'Endpoint AI non trovato',
+        statusCode: 404,
+        details: 'URL provati: ${tried.join(' | ')}',
+      );
+    } on TimeoutException {
+      throw const AiProxyException('Timeout durante la connessione al proxy AI.', statusCode: 408);
+    } on SocketException {
+      throw const AiProxyException('Nessuna connessione di rete verso il proxy AI.');
+    }
+  }
+}
+
+/// Import AI: foto di una scheda -> [Scheda] normalizzate (nomi esercizi del
+/// database, schema dell'app, carichi %1RM dai PR) e recensione di una
+/// cartella. Gli errori arrivano come [EsitoAi.errore], già leggibili.
+class AiService {
+  AiService({
+    ProxyAi? proxy,
+    Future<Map<String, double>> Function()? caricaPr,
+    Future<List<String>> Function()? nomiUfficiali,
+  })  : _proxy = proxy ?? HttpProxyAi(),
+        _caricaPr = caricaPr ?? (() => ArchivioAtleta.instance.caricaPr()),
+        _nomiUfficiali = nomiUfficiali ?? _nomiDalDatabase;
+
+  static final AiService instance = AiService();
+
+  final ProxyAi _proxy;
+  final Future<Map<String, double>> Function() _caricaPr;
+  final Future<List<String>> Function() _nomiUfficiali;
+
+  static Future<List<String>> _nomiDalDatabase() async {
+    final database = await ApiEsercizi.ottieniEserciziTradotti();
+    return database.map((e) => e['nome'].toString()).toSet().toList();
   }
 
   static final RegExp _separatori = RegExp(r'[^a-z0-9àèéìòù]');
@@ -189,7 +304,7 @@ class AiService {
     return Carichi.trovaPr(prs, exerciseName);
   }
 
-  static List<Map<String, dynamic>> applyPersonalRecordsFallbackForTest(
+  static List<Map<String, dynamic>> applicaPrFallback(
     List<Map<String, dynamic>> normalizedSchede,
     Map<String, dynamic> personalRecords,
   ) {
@@ -229,23 +344,6 @@ class AiService {
     }).toList();
   }
 
-  static Future<Map<String, dynamic>> _loadPersonalRecordsFromDb() async {
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return {};
-
-      final doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
-      final data = doc.data();
-      if (data == null) return {};
-
-      final pr = data['personal_records'];
-      if (pr is Map<String, dynamic>) return pr;
-      if (pr is Map) return Map<String, dynamic>.from(pr);
-      return {};
-    } catch (_) {
-      return {};
-    }
-  }
 
 
   static double? _extractOneRmFromText(String text) {
@@ -335,8 +433,8 @@ class AiService {
         .toList();
   }
 
-  // Helper pubblico per test/debug locale della normalizzazione import AI.
-  static List<Map<String, dynamic>> normalizeImportedSchedeForTest(
+  /// Normalizza le schede grezze restituite dall'AI (nomi esercizi e schema).
+  static List<Map<String, dynamic>> normalizzaSchedeImportate(
     List<dynamic> rawItems, {
     List<String> nomiUfficiali = const [],
   }) {
@@ -352,184 +450,72 @@ class AiService {
     return _normalizzaSchemaSchede(cloned);
   }
 
-  static Future<Map<String, dynamic>?> _postProxy(String endpoint, Map<String, dynamic> payload) async {
-    if (_aiProxyBaseUrl.isEmpty) {
-      throw const AiProxyException('AI proxy non configurato. Imposta AI_PROXY_BASE_URL.');
-    }
-
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      throw const AiProxyException('Utente non autenticato.', statusCode: 401);
-    }
-
-    try {
-      final idToken = await user.getIdToken(true);
-      final base = _aiProxyBaseUrl.endsWith('/') ? _aiProxyBaseUrl.substring(0, _aiProxyBaseUrl.length - 1) : _aiProxyBaseUrl;
-      final parsedBase = Uri.tryParse(base);
-      final candidates = <Uri>[];
-
-      void addCandidate(Uri uri) {
-        if (!candidates.contains(uri)) {
-          candidates.add(uri);
-        }
-      }
-
-      if (base.endsWith('/$endpoint')) {
-        addCandidate(Uri.parse(base));
-      } else {
-        addCandidate(Uri.parse('$base/$endpoint'));
-      }
-
-      if (parsedBase != null && parsedBase.hasAuthority) {
-        addCandidate(parsedBase.replace(path: '/$endpoint', query: null, fragment: null));
-      }
-
-      final tried = <String>[];
-      for (final uri in candidates) {
-        final response = await http
-            .post(
-              uri,
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer $idToken',
-              },
-              body: jsonEncode(payload),
-            )
-            .timeout(const Duration(seconds: 45));
-
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-          final decoded = jsonDecode(response.body);
-          if (decoded is Map<String, dynamic>) return decoded;
-          throw const AiProxyException('Risposta proxy non valida (JSON atteso).');
-        }
-
-        String backendError = 'Errore sconosciuto';
-        try {
-          final body = jsonDecode(response.body);
-          if (body is Map<String, dynamic> && body['error'] != null) {
-            backendError = body['error'].toString();
-          } else {
-            backendError = response.body;
-          }
-        } catch (_) {
-          backendError = response.body;
-        }
-
-        tried.add('${uri.toString()} -> ${response.statusCode}');
-
-        if (response.statusCode == 404) {
-          continue;
-        }
-
-        throw AiProxyException(
-          'Proxy AI errore ${response.statusCode}',
-          statusCode: response.statusCode,
-          details: backendError,
-        );
-      }
-
-      throw AiProxyException(
-        'Endpoint AI non trovato',
-        statusCode: 404,
-        details: 'URL provati: ${tried.join(' | ')}',
-      );
-    } on TimeoutException {
-      throw const AiProxyException('Timeout durante la connessione al proxy AI.', statusCode: 408);
-    } on SocketException {
-      throw const AiProxyException('Nessuna connessione di rete verso il proxy AI.');
-    }
-  }
-
-  static String _friendlyProxyError(AiProxyException e) {
+  String _messaggioErrore(AiProxyException e) {
     final code = e.statusCode;
     final details = e.details?.trim();
+    final hasDetails = details != null && details.isNotEmpty;
 
     if (code == 401 || code == 403) {
       return 'Sessione scaduta o non autorizzata. Esci e rientra nell\'app, poi riprova.';
     }
     if (code == 404) {
-      if (details != null && details.isNotEmpty) {
-        return 'Endpoint AI non trovato. Base URL attuale: ${_aiProxyBaseUrl.isEmpty ? '(vuoto)' : _aiProxyBaseUrl}. $details';
-      }
-      return 'Endpoint AI non trovato. Base URL attuale: ${_aiProxyBaseUrl.isEmpty ? '(vuoto)' : _aiProxyBaseUrl}. Verifica AI_PROXY_BASE_URL e deploy del proxy.';
+      return 'Endpoint AI non trovato. Base URL attuale: ${_proxy.descrizione}. '
+          '${hasDetails ? details : 'Verifica AI_PROXY_BASE_URL e deploy del proxy.'}';
     }
-    if (code == 408) {
-      return 'Il servizio AI non risponde in tempo. Controlla la rete e riprova.';
-    }
-    if (code == 429) {
-      return 'Limite richieste Gemini raggiunto. Attendi qualche minuto e riprova.';
-    }
+    if (code == 408) return 'Il servizio AI non risponde in tempo. Controlla la rete e riprova.';
+    if (code == 429) return 'Limite richieste Gemini raggiunto. Attendi qualche minuto e riprova.';
     if (code != null && code >= 500) {
-      return details != null && details.isNotEmpty
-          ? 'Errore server AI: $details'
-          : 'Errore interno del servizio AI. Riprova tra poco.';
+      return hasDetails ? 'Errore server AI: $details' : 'Errore interno del servizio AI. Riprova tra poco.';
     }
-
-    if (details != null && details.isNotEmpty) {
-      return 'Errore AI: $details';
-    }
-    return e.message;
+    return hasDetails ? 'Errore AI: $details' : e.message;
   }
-  
-  // FUNZIONE 1: ANALISI FOTO SCHEDA
-  static Future<List<Scheda>?> analizzaFotoScheda(XFile foto) async {
-    try {
-      _lastError = null;
-      final imageBytes = await foto.readAsBytes();
-      final database = await ApiEsercizi.ottieniEserciziTradotti();
-      final List<String> nomiUfficiali = database.map((e) => e['nome'].toString()).toSet().toList();
 
-      final risultato = await _postProxy('analyzeWorkoutPhoto', {
+  /// Legge la foto di una scheda e restituisce le schede trovate.
+  Future<EsitoAi<List<Scheda>>> analizzaFotoScheda(XFile foto) async {
+    try {
+      final imageBytes = await foto.readAsBytes();
+      final nomi = await _nomiUfficiali();
+      final risultato = await _proxy.post('analyzeWorkoutPhoto', {
         'imageBase64': base64Encode(imageBytes),
-        'nomiUfficiali': nomiUfficiali,
+        'nomiUfficiali': nomi,
       });
-      if (risultato == null) return null;
 
       final items = risultato['items'];
-      if (items is! List) return null;
+      if (items is! List || items.isEmpty) {
+        return const EsitoAi.errore('Nessuna scheda riconosciuta. Prova con una foto più nitida.');
+      }
 
-      _normalizzaEserciziJson(items, nomiUfficiali);
-      final compatibiliBase = _normalizzaSchemaSchede(items);
-      final prDb = await _loadPersonalRecordsFromDb();
-      final compatibili = applyPersonalRecordsFallbackForTest(compatibiliBase, prDb);
-      return compatibili.map((e) => Scheda.fromJson(e)).toList();
+      _normalizzaEserciziJson(items, nomi);
+      final prs = await _caricaPr();
+      final compatibili = applicaPrFallback(_normalizzaSchemaSchede(items), prs);
+      return EsitoAi.ok(compatibili.map((e) => Scheda.fromJson(e)).toList());
     } on AiProxyException catch (e) {
-      _lastError = _friendlyProxyError(e);
       debugPrint('Errore AI Foto: $e');
-      return null;
+      return EsitoAi.errore(_messaggioErrore(e));
     } catch (e) {
-      _lastError = 'Errore imprevisto durante la connessione all\'IA.';
       debugPrint('Errore AI Foto: $e');
-      return null;
+      return const EsitoAi.errore('Errore imprevisto durante la connessione all\'IA.');
     }
   }
 
-  // --- FUNZIONE 2: VALUTAZIONE SCHEDA ---
-  static Future<String?> valutaCartella(String nomeCartella, List<Scheda> schede) async {
+  /// Recensione testuale delle schede di una cartella.
+  Future<EsitoAi<String>> valutaCartella(String nomeCartella, List<Scheda> schede) async {
     try {
-      _lastError = null;
-      final risultato = await _postProxy('reviewWorkoutFolder', {
+      final risultato = await _proxy.post('reviewWorkoutFolder', {
         'nomeCartella': nomeCartella,
         'schede': schede.map((s) => s.toJson()).toList(),
       });
-      if (risultato == null) {
-        return 'Errore di connessione al servizio AI.';
-      }
-
       final text = risultato['text']?.toString();
       if (text == null || text.trim().isEmpty) {
-        return 'Errore: risposta AI non valida.';
+        return const EsitoAi.errore('Errore: risposta AI non valida.');
       }
-      return text;
+      return EsitoAi.ok(text);
     } on AiProxyException catch (e) {
-      final msg = _friendlyProxyError(e);
-      _lastError = msg;
       debugPrint('Errore AI Valutazione: $e');
-      return msg;
+      return EsitoAi.errore(_messaggioErrore(e));
     } catch (e) {
-      _lastError = "Errore di connessione all'IA. Controlla la rete e riprova.";
       debugPrint('Errore AI Valutazione: $e');
-      return "Errore di connessione all'IA. Controlla la rete e riprova.";
+      return const EsitoAi.errore("Errore di connessione all'IA. Controlla la rete e riprova.");
     }
   }
 }

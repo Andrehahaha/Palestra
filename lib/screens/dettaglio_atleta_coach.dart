@@ -77,17 +77,18 @@ class DettaglioAtletaCoachScreen extends StatelessWidget {
     if (!context.mounted) return;
     showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator(color: Colors.purpleAccent)));
 
-    List<Scheda>? schedeImportate = await AiService.analizzaFotoScheda(foto);
+    final esito = await AiService.instance.analizzaFotoScheda(foto);
+    final schedeImportate = esito.valore;
     
     if (!context.mounted) return;
     Navigator.pop(context); 
 
-    if (schedeImportate != null && schedeImportate.isNotEmpty) {
+    if (schedeImportate != null) {
       // 👇 QUI IL FIX: Usiamo schedaDaModificare!
       final Scheda? schedaRivista = await Navigator.push(context, MaterialPageRoute(builder: (context) => CreaSchedaScreen(schedaDaModificare: schedeImportate.first)));
       if (schedaRivista != null && context.mounted) _confermaEInvia(context, [schedaRivista]);
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Errore o foto poco chiara. Riprova! ❌'), backgroundColor: Colors.red));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(esito.errore ?? 'Errore o foto poco chiara. Riprova! ❌'), backgroundColor: Colors.red));
     }
   }
 

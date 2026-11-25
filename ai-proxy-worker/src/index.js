@@ -1,10 +1,9 @@
 import { jwtVerify, importX509 } from 'jose';
+// Prompt, chiamata a Gemini e parsing condivisi con Firebase Functions.
+import ai from '../../functions/ai_shared.js';
 
-const GEMINI_ENDPOINTS = [
-  'https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent',
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent',
-];
+const { HttpError } = ai;
+
 const FIREBASE_CERTS_URL = 'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
 
 const corsHeaders = {
@@ -30,19 +29,10 @@ class AuthError extends Error {
   }
 }
 
-class HttpError extends Error {
-  constructor(status, message, details) {
-    super(message);
-    this.name = 'HttpError';
-    this.status = status;
-    this.details = details;
-  }
-}
-
 async function getFirebaseSigningKey(kid) {
   const certsResp = await fetch(FIREBASE_CERTS_URL);
   if (!certsResp.ok) {
-    throw new Error(`Failed to load Firebase certs: ${certsResp.status}`);
+    throw new HttpError(502, `Failed to load Firebase certs: ${certsResp.status}`);
   }
   const certs = await certsResp.json();
   const certPem = certs[kid];
@@ -86,193 +76,14 @@ async function verifyFirebaseIdToken(request, projectId) {
   return payload;
 }
 
-async function callGemini(apiKey, requestBody) {
-  let fallbackLog = [];
-
-  for (const endpoint of GEMINI_ENDPOINTS) {
-    const resp = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': apiKey,
-      },
-      body: JSON.stringify(requestBody),
-    });
-
-    const text = await resp.text();
-    if (resp.ok) {
-      return JSON.parse(text);
-    }
-
-    fallbackLog.push(`${endpoint} -> ${resp.status}`);
-
-    const canFallback = resp.status === 404 || (resp.status === 400 && /model|unsupported|not found/i.test(text));
-    if (canFallback) {
-      continue;
-    }
-
-    throw new HttpError(resp.status, `Gemini error ${resp.status}`, text);
-  }
-
-  throw new HttpError(
-    502,
-    'Nessun endpoint Gemini compatibile disponibile',
-    fallbackLog.join(' | '),
-  );
-}
-
-function extractModelText(geminiResp) {
-  const parts = geminiResp?.candidates?.[0]?.content?.parts;
-  if (!Array.isArray(parts)) return '';
-  return parts.map((p) => p?.text || '').join('');
-}
-
-function extractJsonPayload(raw) {
-  const trimmed = (raw || '').trim();
-  if (!trimmed) return '';
-
-  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-  if (fenced?.[1]) return fenced[1].trim();
-  return trimmed;
-}
-
-function buildAnalyzePrompt(nomiUfficiali) {
-  return `Sei un personal trainer esperto in protocolli di forza e bodybuilding. Analizza questa immagine che contiene una scheda di allenamento.
-
-ATTENZIONE: L'allenamento potrebbe essere diviso in più giorni (es. Giorno A, Giorno B, Day 1, Day 2).
-Estrai i dati e restituisci SOLO un ARRAY JSON valido contenente un oggetto per ogni giorno di allenamento trovato.
-
-REGOLE PER I NOMI DEGLI ESERCIZI (FONDAMENTALE):
-Qui sotto ti fornisco l'elenco ESATTO degli esercizi supportati dalla mia app.
-Per ogni esercizio che leggi dalla foto, DEVI trovare il nome corrispondente in questa lista e scriverlo ESATTAMENTE in quel modo.
-Se l'esercizio nella foto è completamente introvabile in lista, usa una traduzione italiana standard.
-
-LISTA ESERCIZI UFFICIALI:
-${JSON.stringify(nomiUfficiali)}
-
-REGOLE PER LE TECNICHE:
-[Classico, Back off, Drop Set, Super Set, Rest Pause, Piramidale, Giant Set, Cluster Set, Top Set, Feeder Set, Warm Up, Myo-reps, AMRAP, Negative, Isometria, Stripping, Trisets, Pre-stancaggio, EMOM, Burnouts].
-
-REGOLE PER L'RPE:
-Se nella foto per un esercizio è indicato un valore come @8, RPE 8, RIR 2, estrai solo il numero.
-
-REGOLE PER LE NUOVE MODALITA:
-- Ogni scheda deve avere:
-  - "continuativa": true
-  - "settimanaCorrente": 1
-- Ogni esercizio deve avere "modalitaIntensita":
-  - usa "rir" se trovi indicazioni RIR/RPE
-  - usa "percentuale" se trovi % o riferimento al massimale
-- Se modalitaIntensita = "rir", compila "rirTarget" (solo numero o stringa breve)
-- Se modalitaIntensita = "percentuale", compila quando possibile:
-  - "percentualeMassimale" (numero)
-  - "massimaleKg" (numero, se presente nel testo)
-  - "caricoTargetKg" (numero, se già esplicitato)
-
-REGOLE SPECIFICHE BIG 3 (OBBLIGATORIO):
-- Per "Panca Piana", "Squat" e "Stacco da Terra" (o equivalenti inglesi), se trovi una percentuale tipo 75%, 82.5%, @70%, devi sempre compilare:
-  - "modalitaIntensita": "percentuale"
-  - "percentualeMassimale": numero della percentuale
-- Se nello stesso testo trovi anche il massimale (es. 1RM 120kg), compila anche "massimaleKg".
-
-STRUTTURA JSON:
-[
-  {
-    "nome": "Nome Scheda - Giorno 1",
-    "livello": "Intermedio",
-    "categoria": "Importata AI",
-    "continuativa": true,
-    "settimanaCorrente": 1,
-    "esercizi": [
-      {
-        "nome": "NOME PRESO DALLA LISTA UFFICIALE",
-        "avvicinamento": 0,
-        "workingSet": 3,
-        "ripetizioni": "8-10",
-        "recupero": "90",
-        "rpe": "8",
-        "modalitaIntensita": "rir",
-        "rirTarget": "2",
-        "percentualeMassimale": null,
-        "massimaleKg": null,
-        "caricoTargetKg": null,
-        "note": "eventuali note",
-        "metodo": "Classico",
-        "tecniche": ["Classico"]
-      }
-    ]
-  }
-]
-
-NOTA:
-- Non aggiungere testo fuori dal JSON.`;
-}
-
-function buildReviewPrompt(nomeCartella, schede) {
-  return `Sei un Senior Personal Trainer e preparatore atletico.
-Un tuo atleta ti ha chiesto di valutare il suo programma di allenamento chiamato "${nomeCartella}".
-Ecco il dettaglio in formato JSON delle giornate di allenamento:
-${JSON.stringify(schede)}
-
-Analizza la scheda e fornisci un responso discorsivo, amichevole ma tecnico.
-Struttura la risposta in questo modo usando le emoji:
-⚖️ Bilanciamento Generale
-📊 Volume e Intensità
-⚠️ Gruppi Muscolari Carenti/Eccessivi
-💡 Consiglio del Coach
-
-Rispondi in italiano. Non usare codice.`;
-}
-
 async function handleAnalyze(request, env) {
-  const payload = await request.json();
-  const imageBase64 = payload?.imageBase64;
-  const nomiUfficiali = payload?.nomiUfficiali;
-
-  if (!imageBase64 || !Array.isArray(nomiUfficiali)) {
-    return json(400, { error: 'Payload non valido' });
-  }
-
-  const geminiResp = await callGemini(env.GEMINI_API_KEY, {
-    contents: [
-      {
-        role: 'user',
-        parts: [
-          { text: buildAnalyzePrompt(nomiUfficiali) },
-          { inline_data: { mime_type: 'image/jpeg', data: imageBase64 } },
-        ],
-      },
-    ],
-    generationConfig: {
-      responseMimeType: 'application/json',
-    },
-  });
-
-  const raw = extractModelText(geminiResp);
-  const jsonPayload = extractJsonPayload(raw);
-  const items = JSON.parse(jsonPayload);
-  if (!Array.isArray(items)) {
-    return json(422, { error: 'Risposta AI non valida' });
-  }
-
-  return json(200, { items });
+  const { status, body } = await ai.analyzeWorkoutPhoto(env.GEMINI_API_KEY, await request.json());
+  return json(status, body);
 }
 
 async function handleReview(request, env) {
-  const payload = await request.json();
-  const nomeCartella = payload?.nomeCartella;
-  const schede = payload?.schede;
-
-  if (!nomeCartella || !Array.isArray(schede)) {
-    return json(400, { error: 'Payload non valido' });
-  }
-
-  const geminiResp = await callGemini(env.GEMINI_API_KEY, {
-    contents: [{ role: 'user', parts: [{ text: buildReviewPrompt(nomeCartella, schede) }] }],
-  });
-
-  const text = extractModelText(geminiResp).trim();
-  return json(200, { text });
+  const { status, body } = await ai.reviewWorkoutFolder(env.GEMINI_API_KEY, await request.json());
+  return json(status, body);
 }
 
 export default {
@@ -295,7 +106,13 @@ export default {
         return json(500, { error: 'GEMINI_API_KEY non configurata' });
       }
 
-      await verifyFirebaseIdToken(request, projectId);
+      try {
+        await verifyFirebaseIdToken(request, projectId);
+      } catch (error) {
+        // Token scaduto, firma non valida, kid sconosciuto: sempre 401, non 500.
+        if (error instanceof AuthError || error instanceof HttpError) throw error;
+        throw new AuthError(`Invalid Firebase token: ${error.message}`);
+      }
 
       const url = new URL(request.url);
       if (url.pathname.endsWith('/analyzeWorkoutPhoto')) {

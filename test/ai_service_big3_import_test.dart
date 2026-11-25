@@ -18,7 +18,7 @@ void main() {
         },
       ];
 
-      final normalized = AiService.normalizeImportedSchedeForTest(raw);
+      final normalized = AiService.normalizzaSchedeImportate(raw);
       final es = normalized.first['esercizi'][0] as Map<String, dynamic>;
 
       expect(es['modalitaIntensita'], 'percentuale');
@@ -40,7 +40,7 @@ void main() {
         },
       ];
 
-      final normalized = AiService.normalizeImportedSchedeForTest(raw);
+      final normalized = AiService.normalizzaSchedeImportate(raw);
       final es = normalized.first['esercizi'][0] as Map<String, dynamic>;
 
       expect(es['modalitaIntensita'], 'percentuale');
@@ -62,7 +62,7 @@ void main() {
         },
       ];
 
-      final normalized = AiService.normalizeImportedSchedeForTest(raw);
+      final normalized = AiService.normalizzaSchedeImportate(raw);
       final es = normalized.first['esercizi'][0] as Map<String, dynamic>;
 
       expect(es['modalitaIntensita'], 'percentuale');
@@ -95,7 +95,7 @@ void main() {
         },
       ];
 
-      final normalized = AiService.normalizeImportedSchedeForTest(raw);
+      final normalized = AiService.normalizzaSchedeImportate(raw);
       final exercises = normalized.first['esercizi'] as List<dynamic>;
 
       final bench = exercises[0] as Map<String, dynamic>;
@@ -137,7 +137,7 @@ void main() {
         },
       ];
 
-      final normalized = AiService.normalizeImportedSchedeForTest(raw);
+      final normalized = AiService.normalizzaSchedeImportate(raw);
       final exercises = normalized.first['esercizi'] as List<dynamic>;
 
       final bench = exercises[0] as Map<String, dynamic>;
@@ -169,8 +169,8 @@ void main() {
         },
       ];
 
-      final normalized = AiService.normalizeImportedSchedeForTest(raw);
-      final withFallback = AiService.applyPersonalRecordsFallbackForTest(
+      final normalized = AiService.normalizzaSchedeImportate(raw);
+      final withFallback = AiService.applicaPrFallback(
         normalized,
         {
           'Panca Piana': 125.0,
@@ -198,8 +198,8 @@ void main() {
         },
       ];
 
-      final normalized = AiService.normalizeImportedSchedeForTest(raw);
-      final withFallback = AiService.applyPersonalRecordsFallbackForTest(
+      final normalized = AiService.normalizzaSchedeImportate(raw);
+      final withFallback = AiService.applicaPrFallback(
         normalized,
         {
           'Panca Piana': 120.0,
@@ -226,8 +226,8 @@ void main() {
         },
       ];
 
-      final normalized = AiService.normalizeImportedSchedeForTest(raw);
-      final withFallback = AiService.applyPersonalRecordsFallbackForTest(
+      final normalized = AiService.normalizzaSchedeImportate(raw);
+      final withFallback = AiService.applicaPrFallback(
         normalized,
         {
           'Stacco da Terra': 200.0,

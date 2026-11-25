@@ -55,18 +55,18 @@ extension _WorkoutsScreenSections on _WorkoutsScreenState {
               barrierDismissible: false,
               builder: (context) => const Center(child: CircularProgressIndicator(color: Colors.deepOrange)),
             );
-            List<Scheda>? schedeImportate = await AiService.analizzaFotoScheda(foto);
+            final esito = await AiService.instance.analizzaFotoScheda(foto);
             if (!context.mounted || !mounted) return;
             Navigator.pop(context);
-            if (schedeImportate != null && schedeImportate.isNotEmpty) {
+            final schedeImportate = esito.valore;
+            if (schedeImportate != null) {
               _updateState(() {
                 mieSchede.addAll(schedeImportate);
               });
               _salvaDati();
               ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${schedeImportate.length} schede importate! 🤖💪')));
             } else {
-              final msg = AiService.consumeLastError() ?? 'Errore durante la scansione. Riprova! ❌';
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(esito.errore ?? 'Errore durante la scansione. Riprova! ❌')));
             }
           }
         },
@@ -219,7 +219,8 @@ extension _WorkoutsScreenSections on _WorkoutsScreenState {
       barrierDismissible: false,
       builder: (c) => const Center(child: CircularProgressIndicator(color: Colors.purpleAccent)),
     );
-    String? recensione = await AiService.valutaCartella(nomeCategoria, schedeDiQuestaCategoria);
+    final esito = await AiService.instance.valutaCartella(nomeCategoria, schedeDiQuestaCategoria);
+    final String recensione = esito.valore ?? esito.errore!;
     if (!context.mounted) return;
     Navigator.pop(context);
 
@@ -245,7 +246,7 @@ extension _WorkoutsScreenSections on _WorkoutsScreenState {
             Container(
               constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.6),
               child: SingleChildScrollView(
-                child: Text(recensione ?? 'Errore.', style: const TextStyle(fontSize: 16, height: 1.5, color: Colors.white)),
+                child: Text(recensione, style: const TextStyle(fontSize: 16, height: 1.5, color: Colors.white)),
               ),
             ),
             const SizedBox(height: 24),

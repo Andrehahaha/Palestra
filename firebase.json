@@ -29,6 +29,7 @@
 		"rules": "storage.rules"
 	},
 	"functions": {
-		"source": "functions"
+		"source": "functions",
+		"ignore": ["node_modules", ".git", "*.test.js"]
 	}
 }
