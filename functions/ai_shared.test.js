@@ -145,3 +145,11 @@ test('analyze: ragionamento di Gemini spento (estrazione, deve essere veloce)', 
   assert.equal(calls[0].body.generationConfig.thinkingConfig.thinkingBudget, 0);
   assert.equal(calls[0].body.generationConfig.responseMimeType, 'application/json');
 });
+
+test('analyze: prompt su nomi (nomeOriginale, niente forzature), cicli e settimane complete', () => {
+  const p = ai.buildAnalyzePrompt([]);
+  assert.match(p, /"nomeOriginale"/);
+  assert.match(p, /stesso movimento/i);
+  assert.match(p, /prima settimana di quel ciclo/i);
+  assert.match(p, /lista completa/i);
+});

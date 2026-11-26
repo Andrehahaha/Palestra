@@ -53,4 +53,10 @@ void main() {
     expect(testo, contains('Panca Piana 3x8'));
     expect(testo, isNot(contains('calendario')));
   });
+
+  test('elenco dei nomi cambiati', () {
+    final t = RiepilogoImport.nomiCambiati([('Pressa 45°', 'Chest Press alla Macchina')]);
+    expect(t, contains('Pressa 45° -> Chest Press alla Macchina'));
+    expect(RiepilogoImport.nomiCambiati([]), isEmpty);
+  });
 }

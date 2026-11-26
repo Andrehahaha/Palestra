@@ -264,6 +264,44 @@ void main() {
       expect(senzaDurata.ripartiDaSettimana, 6);
     });
 
+    test('settimana parziale completata dalla precedente, RIR mancante ereditato', () async {
+      final s = await importa({
+        'nome': 'Upper',
+        'esercizi': [
+          {'nome': 'Squat', 'workingSet': 4, 'rirTarget': '1-2'},
+          {'nome': 'Panca Piana', 'workingSet': 3, 'rirTarget': '1'},
+          {'nome': 'Trazioni', 'workingSet': 3, 'rirTarget': '1'},
+        ],
+        'programma': {
+          '6': [
+            {'nome': 'Squat', 'workingSet': 5},
+            {'nome': 'Trazioni', 'workingSet': 4},
+          ],
+        },
+      });
+      final w6 = s.programma![6]!;
+      expect(w6.map((e) => e.nome), ['Squat', 'Panca Piana', 'Trazioni']);
+      expect(w6.map((e) => e.workingSet), [5, 3, 4]);
+      expect(w6.map((e) => e.rirTarget), ['1-2', '1', '1']);
+    });
+
+    test('nomi cambiati rispetto al documento: elenco per il log', () async {
+      final proxy = FakeProxy(risposta: {
+        'items': [
+          {
+            'nome': 'Lower',
+            'esercizi': [
+              {'nome': 'Chest Press alla Macchina', 'nomeOriginale': 'Pressa 45°'},
+              {'nome': 'Squat', 'nomeOriginale': 'Squat'},
+            ],
+          },
+        ],
+      });
+      final service = _service(proxy);
+      await service.analizzaFile(nomeFile: 'a.pdf', bytes: Uint8List.fromList([1]));
+      expect(service.ultimiNomiCambiati, [('Pressa 45°', 'Chest Press alla Macchina')]);
+    });
+
     test('calendario: chiavi testuali e intervalli espansi, valori non validi scartati', () async {
       final s = await importa({
         'nome': 'Upper',

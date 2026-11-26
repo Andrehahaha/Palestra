@@ -38,6 +38,17 @@ abstract final class RiepilogoImport {
     return out.toString();
   }
 
+  /// Esercizi il cui nome è stato cambiato rispetto al documento: da
+  /// controllare a mano. Vuoto se non ce ne sono.
+  static String nomiCambiati(List<(String, String)> coppie) {
+    if (coppie.isEmpty) return '';
+    final out = StringBuffer()..writeln('=== NOMI CAMBIATI (controlla) ===');
+    for (final (originale, scelto) in coppie) {
+      out.writeln('  $originale -> $scelto');
+    }
+    return out.toString();
+  }
+
   static String _esercizio(Esercizio e) {
     final riga = StringBuffer('${e.nome} ${e.workingSet}x${e.ripetizioni}');
     if (e.rirTarget != null && e.rirTarget!.isNotEmpty) riga.write(' RIR ${e.rirTarget}');

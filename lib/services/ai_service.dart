@@ -166,6 +166,9 @@ class AiService {
   static final AiService instance = AiService();
 
   final ProxyAi _proxy;
+
+  /// Nomi del documento sostituiti all'ultimo import (originale, scelto).
+  List<(String, String)> ultimiNomiCambiati = const [];
   final Future<Map<String, double>> Function() _caricaPr;
   final Future<List<String>> Function() _nomiUfficiali;
 
@@ -413,6 +416,52 @@ class AiService {
         .toList();
   }
 
+  /// Coppie (nome nel documento, nome scelto) dove i due differiscono.
+  static List<(String, String)> _nomiCambiati(List<dynamic> items) {
+    final out = <(String, String)>[];
+    void guarda(dynamic lista) {
+      if (lista is! List) return;
+      for (final e in lista.whereType<Map>()) {
+        final originale = e['nomeOriginale']?.toString().trim() ?? '';
+        final scelto = e['nome']?.toString().trim() ?? '';
+        if (originale.isEmpty || scelto.isEmpty) continue;
+        if (_normalizza(originale) == _normalizza(scelto)) continue;
+        if (!out.contains((originale, scelto))) out.add((originale, scelto));
+      }
+    }
+
+    for (final scheda in items.whereType<Map>()) {
+      guarda(scheda['esercizi']);
+      final programma = scheda['programma'];
+      if (programma is Map) programma.values.forEach(guarda);
+    }
+    return out;
+  }
+
+  /// Completa una settimana del piano scritta a metà: gli esercizi che
+  /// mancano e i RIR vuoti vengono dalla settimana precedente.
+  static List<Map<String, dynamic>> _completaSettimana(
+    List<Map<String, dynamic>> settimana,
+    List<Map<String, dynamic>> precedente,
+  ) {
+    String chiave(Map<String, dynamic> e) => _normalizza('${e['nome']}');
+    final perNome = {for (final e in settimana) chiave(e): e};
+    final usati = <String>{};
+    final out = <Map<String, dynamic>>[];
+    for (final p in precedente) {
+      final k = chiave(p);
+      final nuovo = perNome[k];
+      if (nuovo == null) {
+        out.add(Map<String, dynamic>.from(p));
+        continue;
+      }
+      usati.add(k);
+      out.add({...nuovo, if (nuovo['rirTarget'] == null) 'rirTarget': p['rirTarget']});
+    }
+    out.addAll(settimana.where((e) => !usati.contains(chiave(e))));
+    return out;
+  }
+
   /// Settimane indicate da una chiave: "Sett. 2" -> [2], "7-9" -> [7, 8, 9].
   static List<int> _settimaneDaChiave(Object? chiave) {
     final testo = '$chiave';
@@ -474,6 +523,15 @@ class AiService {
       esercizi = settimane[1]!;
     }
     if (esercizi.isNotEmpty) settimane[1] = esercizi;
+
+    // L'AI a volte scrive solo gli esercizi che cambiano: completo dalla settimana prima.
+    final ordinate = settimane.keys.toList()..sort();
+    for (var i = 1; i < ordinate.length; i++) {
+      final questa = settimane[ordinate[i]]!;
+      final prima = settimane[ordinate[i - 1]]!;
+      // Solo se ha meno esercizi: una settimana completa con un esercizio cambiato resta com'è.
+      if (questa.length < prima.length) settimane[ordinate[i]] = _completaSettimana(questa, prima);
+    }
 
     final ultimaScritta = [...settimane.keys, ...calendario.keys, 1].reduce((a, b) => a > b ? a : b);
     var durata = _intero(scheda['durataSettimane'] ?? scheda['durataProgramma']);
@@ -645,10 +703,13 @@ class AiService {
       }
 
       _normalizzaEserciziJson(items, nomi);
+      ultimiNomiCambiati = _nomiCambiati(items);
       final prs = await _caricaPr();
       final compatibili = applicaPrFallback(_normalizzaSchemaSchede(items), prs);
       final schede = compatibili.map((e) => Scheda.fromJson(e)).toList();
       debugPrint(RiepilogoImport.testo(schede));
+      final cambiati = RiepilogoImport.nomiCambiati(ultimiNomiCambiati);
+      if (cambiati.isNotEmpty) debugPrint(cambiati);
       return EsitoAi.ok(schede);
     } on AiProxyException catch (e) {
       debugPrint('Errore AI import: $e');

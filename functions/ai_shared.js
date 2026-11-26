@@ -74,8 +74,9 @@ Estrai i dati e restituisci SOLO un ARRAY JSON valido contenente un oggetto per 
 
 REGOLE PER I NOMI DEGLI ESERCIZI (FONDAMENTALE):
 Qui sotto ti fornisco l'elenco ESATTO degli esercizi supportati dalla mia app.
-Per ogni esercizio che leggi dalla foto, DEVI trovare il nome corrispondente in questa lista e scriverlo ESATTAMENTE in quel modo.
-Se l'esercizio nella foto è completamente introvabile in lista, usa una traduzione italiana standard.
+Per ogni esercizio, se nella lista c'è lo STESSO MOVIMENTO (stesso gesto e stesso gruppo muscolare), scrivi in "nome" il nome della lista ESATTAMENTE in quel modo.
+Se nella lista non c'è lo stesso movimento, in "nome" lascia il nome del documento: è meglio un nome non in lista che un esercizio sbagliato (es. una pressa per le gambe non è una chest press).
+In "nomeOriginale" scrivi sempre il nome come appare nel documento.
 
 LISTA ESERCIZI UFFICIALI:
 ${JSON.stringify(nomiUfficiali)}
@@ -110,7 +111,8 @@ PROGRAMMAZIONE SU PIÙ SETTIMANE:
 - Restituisci UN oggetto per giorno (non uno per settimana).
 - Numera SEMPRE le settimane 1, 2, 3, ... dall'inizio del programma, qualunque sia l'etichetta nel documento ("Sett. 2", "W2", "Microciclo 2", "Week 2" diventano 2).
 - In "esercizi" metti la settimana 1.
-- In "programma" metti SOLO le settimane scritte esplicitamente nel documento e diverse dalla precedente, con la lista completa degli esercizi: chiave = numero della settimana come stringa ("2", "3", ...).
+- In "programma" metti SOLO le settimane scritte esplicitamente nel documento e diverse dalla precedente, con la LISTA COMPLETA degli esercizi del giorno (anche quelli che non cambiano): chiave = numero della settimana come stringa ("2", "3", ...).
+- Indicazioni come "dal ciclo 2" (es. "5 serie dal ciclo 2", "drop set dal ciclo 2") valgono dalla PRIMA SETTIMANA DI QUEL CICLO secondo la tabella della progressione (es. ciclo 2 = settimana 6): metti lì la settimana in "programma", non nelle settimane del ciclo 1.
 - Se un intervallo dice "settimane 1-3" e poi cambia dalla successiva, metti solo la settimana in cui cambia: quelle non scritte ripetono la precedente.
 - Se c'è una sola settimana, "programma" è {}.
 
@@ -147,7 +149,8 @@ STRUTTURA JSON:
     "settimanaCorrente": 1,
     "esercizi": [
       {
-        "nome": "NOME PRESO DALLA LISTA UFFICIALE",
+        "nome": "NOME DALLA LISTA UFFICIALE (o quello del documento)",
+        "nomeOriginale": "nome come scritto nel documento",
         "avvicinamento": 0,
         "workingSet": 3,
         "ripetizioni": "8-10",
