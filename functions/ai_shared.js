@@ -65,7 +65,7 @@ function extractJsonPayload(raw) {
 }
 
 function buildAnalyzePrompt(nomiUfficiali) {
-  return `Sei un personal trainer esperto in protocolli di forza e bodybuilding. Analizza questa immagine che contiene una scheda di allenamento.
+  return `Sei un personal trainer esperto in protocolli di forza e bodybuilding. Analizza questo documento (foto, PDF o testo estratto da Word) che contiene una scheda di allenamento.
 
 ATTENZIONE: L'allenamento potrebbe essere diviso in più giorni (es. Giorno A, Giorno B, Day 1, Day 2).
 Estrai i dati e restituisci SOLO un ARRAY JSON valido contenente un oggetto per ogni giorno di allenamento trovato.
@@ -103,6 +103,20 @@ REGOLE SPECIFICHE BIG 3 (OBBLIGATORIO):
   - "percentualeMassimale": numero della percentuale
 - Se nello stesso testo trovi anche il massimale (es. 1RM 120kg), compila anche "massimaleKg".
 
+PROGRAMMAZIONE SU PIÙ SETTIMANE:
+- Spesso lo stesso giorno cambia nel tempo (es. GG1 settimana 1: panca 3 serie; settimana 4: 6 serie; settimana 10: 3 serie con Stripping).
+- Restituisci UN oggetto per giorno (non uno per settimana).
+- In "esercizi" metti la prima settimana scritta.
+- In "programma" metti SOLO le altre settimane scritte esplicitamente nel documento, con la lista completa degli esercizi di quella settimana: chiave = numero della settimana come stringa.
+- Se un intervallo dice "settimane 1-3" e poi cambia alla 4, metti solo la settimana 4 in "programma": le settimane non scritte ripetono la precedente.
+- Se c'è una sola settimana, "programma" è {}.
+
+REGOLE DI PROGRESSIONE:
+- Se il documento indica come progredire (es. "+2,5 kg a settimana", "+5% ogni settimana", "RIR 2 dalla settimana 3"), aggiungi all'esercizio "progressione": {"daSettimana": n, "aSettimana": n o null, "incrementoKg": numero o null, "incrementoPercentuale": numero o null, "rirTarget": stringa o null, "nota": "testo originale della regola"}.
+- Se la regola non è esprimibile con questi campi, compila solo "daSettimana" e "nota".
+- Se la regola vale per tutti gli esercizi, ripetila su ognuno.
+- NON inventare settimane né regole: se il documento non le scrive, non metterle.
+
 STRUTTURA JSON:
 [
   {
@@ -126,9 +140,13 @@ STRUTTURA JSON:
         "caricoTargetKg": null,
         "note": "eventuali note",
         "metodo": "Classico",
-        "tecniche": ["Classico"]
+        "tecniche": ["Classico"],
+        "progressione": null
       }
-    ]
+    ],
+    "programma": {
+      "4": [ { "nome": "...", "workingSet": 6, "ripetizioni": "6", "tecniche": ["Classico"] } ]
+    }
   }
 ]
 
@@ -156,10 +174,29 @@ Rispondi in italiano. Non usare codice.`;
  * Analizza la foto di una scheda. Restituisce `{ status, body }` pronto per
  * la risposta HTTP. Errori Gemini: lancia HttpError.
  */
+const MIME_AMMESSI = ['image/jpeg', 'image/png', 'image/heic', 'application/pdf'];
+
+/** Parte con il contenuto della scheda: file (foto/PDF) o testo (Word). `null` se non valido. */
+function parteDocumento(payload) {
+  if (typeof payload?.testo === 'string' && payload.testo.trim()) {
+    return { text: `DOCUMENTO (testo estratto da Word, celle separate da tab):
+${payload.testo}` };
+  }
+  if (payload?.fileBase64) {
+    if (!MIME_AMMESSI.includes(payload.mimeType)) return null;
+    return { inline_data: { mime_type: payload.mimeType, data: payload.fileBase64 } };
+  }
+  if (payload?.imageBase64) {
+    // Formato delle versioni dell'app precedenti all'import da file.
+    return { inline_data: { mime_type: 'image/jpeg', data: payload.imageBase64 } };
+  }
+  return null;
+}
+
 async function analyzeWorkoutPhoto(apiKey, payload, options) {
-  const imageBase64 = payload?.imageBase64;
   const nomiUfficiali = payload?.nomiUfficiali;
-  if (!imageBase64 || !Array.isArray(nomiUfficiali)) {
+  const documento = parteDocumento(payload);
+  if (!documento || !Array.isArray(nomiUfficiali)) {
     return { status: 400, body: { error: 'Payload non valido' } };
   }
 
@@ -167,10 +204,7 @@ async function analyzeWorkoutPhoto(apiKey, payload, options) {
     contents: [
       {
         role: 'user',
-        parts: [
-          { text: buildAnalyzePrompt(nomiUfficiali) },
-          { inline_data: { mime_type: 'image/jpeg', data: imageBase64 } },
-        ],
+        parts: [{ text: buildAnalyzePrompt(nomiUfficiali) }, documento],
       },
     ],
     generationConfig: { responseMimeType: 'application/json' },

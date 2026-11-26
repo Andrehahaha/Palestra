@@ -64,3 +64,45 @@ test('callGemini: 429 non fa fallback e conserva lo status', async () => {
   );
   assert.equal(calls.length, 1);
 });
+
+// --- import da file: PDF, immagini, testo (Word) ---
+
+function partiInviate(calls) {
+  return calls[0].body.contents[0].parts;
+}
+
+test('analyze: PDF inviato con il suo mime type', async () => {
+  const { fetchImpl, calls } = fakeFetch([{ status: 200, text: gemini('[{"nome":"GG1"}]') }]);
+  const res = await ai.analyzeWorkoutPhoto('k', { fileBase64: 'x', mimeType: 'application/pdf', nomiUfficiali: [] }, { fetchImpl });
+  assert.equal(res.status, 200);
+  const file = partiInviate(calls).find((p) => p.inline_data);
+  assert.equal(file.inline_data.mime_type, 'application/pdf');
+});
+
+test('analyze: testo del Word inviato come testo, senza file', async () => {
+  const { fetchImpl, calls } = fakeFetch([{ status: 200, text: gemini('[{"nome":"GG1"}]') }]);
+  await ai.analyzeWorkoutPhoto('k', { testo: 'GG1\tPanca\t3x8', nomiUfficiali: [] }, { fetchImpl });
+  const parti = partiInviate(calls);
+  assert.equal(parti.some((p) => p.inline_data), false);
+  assert.ok(parti.some((p) => (p.text || '').includes('GG1\tPanca\t3x8')));
+});
+
+test('analyze: vecchio formato imageBase64 resta jpeg', async () => {
+  const { fetchImpl, calls } = fakeFetch([{ status: 200, text: gemini('[]') }]);
+  await ai.analyzeWorkoutPhoto('k', { imageBase64: 'x', nomiUfficiali: [] }, { fetchImpl });
+  assert.equal(partiInviate(calls).find((p) => p.inline_data).inline_data.mime_type, 'image/jpeg');
+});
+
+test('analyze: mime type non supportato -> 400 senza chiamare Gemini', async () => {
+  const { fetchImpl, calls } = fakeFetch([]);
+  const res = await ai.analyzeWorkoutPhoto('k', { fileBase64: 'x', mimeType: 'application/zip', nomiUfficiali: [] }, { fetchImpl });
+  assert.equal(res.status, 400);
+  assert.equal(calls.length, 0);
+});
+
+test('analyze: il prompt chiede programma e progressione senza inventare', () => {
+  const p = ai.buildAnalyzePrompt([]);
+  assert.match(p, /"programma"/);
+  assert.match(p, /"progressione"/);
+  assert.match(p, /non inventare/i);
+});
