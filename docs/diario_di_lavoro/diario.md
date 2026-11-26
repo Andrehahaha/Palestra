@@ -68,6 +68,18 @@ Le settimane vanno numerate 1, 2, 3; all'import controllo comunque: dalle
 etichette tengo il numero, se manca la W1 la prima settimana diventa la W1,
 e il ciclo lo tengo solo se ha senso.
 
+**Prova con una scheda vera (ipertrofia, 15 settimane).** Problemi trovati
+e sistemati:
+- il proxy chiamava prima l'API v1 di Gemini, che non supporta la risposta
+  in JSON: ora parte da v1beta;
+- con il ragionamento di Gemini attivo la lettura superava i 2 minuti: per
+  l'import è spento, e l'app aspetta fino a 120 secondi;
+- la scheda aveva RIR che cambia per settimana, scarichi e la ripartenza dal
+  ciclo 2. Aggiunti un calendario per settimana (RIR +n o scarico), la
+  durata e la settimana da cui ripartire. L'AI li legge, l'app costruisce la
+  settimana. Le schede A/B rientrano qui (durata 2, ripartenza dalla 1).
+- Dopo ogni import l'app stampa nel terminale un riepilogo di cosa ha letto.
+
 **Da tenere d'occhio.**
 - Va ridistribuito il proxy (Worker e Functions) per usare PDF e Word.
 - Una regola del coach non si può ancora togliere dall'app.
