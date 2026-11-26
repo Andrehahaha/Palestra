@@ -153,3 +153,9 @@ test('analyze: prompt su nomi (nomeOriginale, niente forzature), cicli e settima
   assert.match(p, /prima settimana di quel ciclo/i);
   assert.match(p, /lista completa/i);
 });
+
+test('analyze: la categoria è il titolo del programma', () => {
+  const p = ai.buildAnalyzePrompt([]);
+  assert.match(p, /titolo del programma/i);
+  assert.doesNotMatch(p, /"categoria": "Importata AI"/);
+});

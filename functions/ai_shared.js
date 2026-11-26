@@ -109,6 +109,7 @@ REGOLE SPECIFICHE BIG 3 (OBBLIGATORIO):
 PROGRAMMAZIONE SU PIÙ SETTIMANE:
 - Spesso lo stesso giorno cambia nel tempo; il ciclo può durare 2, 3, 4 o più settimane.
 - Restituisci UN oggetto per giorno (non uno per settimana).
+- In "categoria" metti il TITOLO DEL PROGRAMMA come scritto nel documento (es. "Scheda ipertrofia 3 giorni"), uguale per tutti i giorni. In "nome" il nome del giorno (es. "Upper - Lunedì").
 - Numera SEMPRE le settimane 1, 2, 3, ... dall'inizio del programma, qualunque sia l'etichetta nel documento ("Sett. 2", "W2", "Microciclo 2", "Week 2" diventano 2).
 - In "esercizi" metti la settimana 1.
 - In "programma" metti SOLO le settimane scritte esplicitamente nel documento e diverse dalla precedente, con la LISTA COMPLETA degli esercizi del giorno (anche quelli che non cambiano): chiave = numero della settimana come stringa ("2", "3", ...).
@@ -144,7 +145,7 @@ STRUTTURA JSON:
   {
     "nome": "Nome Scheda - Giorno 1",
     "livello": "Intermedio",
-    "categoria": "Importata AI",
+    "categoria": "Titolo del programma",
     "continuativa": true,
     "settimanaCorrente": 1,
     "esercizi": [

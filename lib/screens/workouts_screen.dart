@@ -12,6 +12,7 @@ import '../models/esercizio.dart';
 import '../services/ai_service.dart';
 import '../services/archivio_atleta.dart';
 import '../services/carichi.dart';
+import '../services/cartelle.dart';
 import '../services/pdf_schede.dart';
 import 'dettaglio_scheda_screen.dart';
 import 'import_da_file.dart';
@@ -267,17 +268,25 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
     return conferma == true;
   }
 
-  Future<void> _eliminaCartellaVuota(String nomeCategoria) async {
-    final conferma = await _confermaEliminazioneCloud('la cartella "$nomeCategoria"');
+  /// Elimina la cartella e le sue schede (lo storico degli allenamenti resta).
+  Future<void> _eliminaCartella(String nomeCategoria, int numeroSchede) async {
+    final cosa = numeroSchede == 0
+        ? 'la cartella "$nomeCategoria"'
+        : 'la cartella "$nomeCategoria" e le sue $numeroSchede schede (lo storico resta)';
+    final conferma = await _confermaEliminazioneCloud(cosa);
     if (!conferma || !mounted) return;
 
+    late final List<Scheda> tolte;
     _updateState(() {
-      cartelleVuote.remove(nomeCategoria);
+      tolte = Cartelle.rimuoviCartella(nomeCategoria, schede: mieSchede, cartelleVuote: cartelleVuote);
     });
     await _salvaDati();
+    for (final s in tolte) {
+      await _eliminaSchedaDalCloud(s.nome);
+    }
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Cartella vuota eliminata 🗑️'), backgroundColor: Colors.green),
+      const SnackBar(content: Text('Cartella eliminata 🗑️'), backgroundColor: Colors.green),
     );
   }
 
@@ -572,6 +581,7 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
             final schedeImportate = esito.valore;
             if (schedeImportate != null) {
               _updateState(() {
+                Cartelle.assegnaCartelleLibere(schedeImportate, esistenti: mieSchede, cartelleVuote: cartelleVuote);
                 mieSchede.addAll(schedeImportate);
               });
               _salvaDati();
@@ -591,7 +601,8 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
           final schedeImportate = esito.valore;
           if (schedeImportate != null) {
             _updateState(() {
-              mieSchede.addAll(schedeImportate);
+              Cartelle.assegnaCartelleLibere(schedeImportate, esistenti: mieSchede, cartelleVuote: cartelleVuote);
+                mieSchede.addAll(schedeImportate);
             });
             _salvaDati();
             ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${schedeImportate.length} schede importate!')));
@@ -718,12 +729,11 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
                       icon: const Icon(Icons.edit, size: 20, color: Colors.grey),
                       onPressed: () => _rinominaCategoria(nomeCategoria),
                     ),
-                    if (schedeDiQuestaCategoria.isEmpty)
-                      IconButton(
-                        icon: const Icon(Icons.delete_outline, size: 20, color: Colors.redAccent),
-                        tooltip: 'Elimina cartella vuota',
-                        onPressed: () => _eliminaCartellaVuota(nomeCategoria),
-                      ),
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline, size: 20, color: Colors.redAccent),
+                      tooltip: 'Elimina cartella',
+                      onPressed: () => _eliminaCartella(nomeCategoria, schedeDiQuestaCategoria.length),
+                    ),
                   ],
                 ),
                 children: schedeDiQuestaCategoria.isEmpty
