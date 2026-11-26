@@ -11,17 +11,27 @@ import 'package:palestra/services/ai_service.dart';
 import 'testo_docx_test.dart' show docxDi;
 
 class FakeProxy implements ProxyAi {
-  FakeProxy({this.risposta, this.errore});
+  FakeProxy({this.risposta, this.errore, this.rispostaMatch, this.erroreMatch});
 
   Map<String, dynamic>? risposta;
   AiProxyException? errore;
   final List<(String, Map<String, dynamic>)> chiamate = [];
+
+  /// Secondo passaggio (abbinamento nomi), tenuto separato da [chiamate].
+  Map<String, dynamic>? rispostaMatch;
+  AiProxyException? erroreMatch;
+  final List<Map<String, dynamic>> chiamateMatch = [];
 
   @override
   String get descrizione => 'https://proxy.test';
 
   @override
   Future<Map<String, dynamic>> post(String endpoint, Map<String, dynamic> payload) async {
+    if (endpoint == 'matchExerciseNames') {
+      chiamateMatch.add(payload);
+      if (erroreMatch != null) throw erroreMatch!;
+      return rispostaMatch ?? {'scelte': []};
+    }
     chiamate.add((endpoint, payload));
     if (errore != null) throw errore!;
     return risposta!;
@@ -66,7 +76,7 @@ void main() {
       final (endpoint, payload) = proxy.chiamate.single;
       expect(endpoint, 'analyzeWorkoutPhoto');
       expect(payload['imageBase64'], base64Encode([1, 2, 3]));
-      expect(payload['nomiUfficiali'], ['Panca Piana', 'Squat']);
+      expect(payload['nomiUfficiali'], isEmpty);
     });
 
     test('nessuna scheda riconosciuta è un errore', () async {
@@ -285,7 +295,7 @@ void main() {
       expect(w6.map((e) => e.rirTarget), ['1-2', '1', '1']);
     });
 
-    test('nomi cambiati rispetto al documento: elenco per il log', () async {
+    test('nome scelto in lettura dall AI ignorato', () async {
       final proxy = FakeProxy(risposta: {
         'items': [
           {
@@ -298,8 +308,10 @@ void main() {
         ],
       });
       final service = _service(proxy);
-      await service.analizzaFile(nomeFile: 'a.pdf', bytes: Uint8List.fromList([1]));
-      expect(service.ultimiNomiCambiati, [('Pressa 45°', 'Chest Press alla Macchina')]);
+      final esito = await service.analizzaFile(nomeFile: 'a.pdf', bytes: Uint8List.fromList([1]));
+      // La scelta fatta dall'AI in lettura non conta: senza conferma del secondo passaggio resta il nome del documento.
+      expect(esito.valore!.single.esercizi.map((e) => e.nome), ['Pressa 45°', 'Squat']);
+      expect(service.ultimiNomiCambiati, isEmpty);
     });
 
     test('calendario: chiavi testuali e intervalli espansi, valori non validi scartati', () async {
@@ -350,6 +362,84 @@ void main() {
       proxy.post('analyzeWorkoutPhoto', {}),
       throwsA(isA<AiProxyException>().having((e) => e.statusCode, 'status', 408)),
     );
+  });
+
+  group('abbinamento nomi al database', () {
+    const db = ['Panca piana con manubri', 'Spinte Alternate con Manubri in Piedi', 'Squat', 'Leg Press'];
+
+    AiService servizio(FakeProxy p) => AiService(proxy: p, caricaPr: () async => {}, nomiUfficiali: () async => db);
+
+    Map<String, dynamic> lettura(List<String> nomi) => {
+          'items': [
+            {'nome': 'GG1', 'esercizi': [for (final n in nomi) {'nome': n, 'nomeOriginale': n}]},
+          ],
+        };
+
+    Future<List<String>> importa(FakeProxy p) async {
+      final esito = await servizio(p).analizzaFile(nomeFile: 'a.pdf', bytes: Uint8List.fromList([1]));
+      return esito.valore!.single.esercizi.map((e) => e.nome).toList();
+    }
+
+    test('i nomi non esatti vanno al secondo passaggio con i candidati, quelli esatti no', () async {
+      final p = FakeProxy(
+        risposta: lettura(['Spinte con manubri su panca piana', 'squat']),
+        rispostaMatch: {
+          'scelte': [
+            {'originale': 'Spinte con manubri su panca piana', 'scelto': 'Panca piana con manubri'},
+          ],
+        },
+      );
+      final service = servizio(p);
+      final esito = await service.analizzaFile(nomeFile: 'a.pdf', bytes: Uint8List.fromList([1]));
+
+      expect(esito.valore!.single.esercizi.map((e) => e.nome), ['Panca piana con manubri', 'Squat']);
+      final richiesti = (p.chiamateMatch.single['esercizi'] as List).cast<Map>();
+      expect(richiesti.map((e) => e['originale']), ['Spinte con manubri su panca piana']);
+      expect(richiesti.single['candidati'], containsAll(['Panca piana con manubri', 'Spinte Alternate con Manubri in Piedi']));
+      expect((richiesti.single['candidati'] as List).length, lessThanOrEqualTo(10));
+      expect(service.ultimiNomiCambiati, contains(('Spinte con manubri su panca piana', 'Panca piana con manubri')));
+    });
+
+    test('scelta null: resta il nome del documento', () async {
+      final p = FakeProxy(
+        risposta: lettura(['Croci ai cavi dal basso']),
+        rispostaMatch: {
+          'scelte': [
+            {'originale': 'Croci ai cavi dal basso', 'scelto': null},
+          ],
+        },
+      );
+      expect(await importa(p), ['Croci ai cavi dal basso']);
+    });
+
+    test('se il secondo passaggio fallisce l\'import va avanti con i nomi del documento', () async {
+      final p = FakeProxy(
+        risposta: lettura(['Spinte con manubri su panca piana']),
+        erroreMatch: const AiProxyException('x', statusCode: 500),
+      );
+      expect(await importa(p), ['Spinte con manubri su panca piana']);
+    });
+
+    test('nomi uguali in più giorni o settimane: una sola richiesta per nome', () async {
+      final p = FakeProxy(risposta: {
+        'items': [
+          {
+            'nome': 'GG1',
+            'esercizi': [{'nome': 'Pressa 45°'}],
+            'programma': {'2': [{'nome': 'Pressa 45°'}]},
+          },
+          {'nome': 'GG2', 'esercizi': [{'nome': 'Pressa 45°'}]},
+        ],
+      }, rispostaMatch: {
+        'scelte': [
+          {'originale': 'Pressa 45°', 'scelto': 'Leg Press'},
+        ],
+      });
+      final esito = await servizio(p).analizzaFile(nomeFile: 'a.pdf', bytes: Uint8List.fromList([1]));
+      expect(esito.valore!.map((s) => s.esercizi.single.nome), ['Leg Press', 'Leg Press']);
+      expect(esito.valore!.first.programma![2]!.single.nome, 'Leg Press');
+      expect((p.chiamateMatch.single['esercizi'] as List), hasLength(1));
+    });
   });
 
   test('HttpProxyAi.urlCandidati', () {

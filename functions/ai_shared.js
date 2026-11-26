@@ -66,13 +66,13 @@ function extractJsonPayload(raw) {
   return trimmed;
 }
 
-function buildAnalyzePrompt(nomiUfficiali) {
-  return `Sei un personal trainer esperto in protocolli di forza e bodybuilding. Analizza questo documento (foto, PDF o testo estratto da Word) che contiene una scheda di allenamento.
-
-ATTENZIONE: L'allenamento potrebbe essere diviso in più giorni (es. Giorno A, Giorno B, Day 1, Day 2).
-Estrai i dati e restituisci SOLO un ARRAY JSON valido contenente un oggetto per ogni giorno di allenamento trovato.
-
-REGOLE PER I NOMI DEGLI ESERCIZI (FONDAMENTALE):
+function sezioneNomi(nomiUfficiali) {
+  if (!Array.isArray(nomiUfficiali) || nomiUfficiali.length === 0) {
+    return `REGOLE PER I NOMI DEGLI ESERCIZI:
+In "nome" e in "nomeOriginale" scrivi il nome dell'esercizio come scritto nel documento (senza tag come LIFT, MULTI, ISO). L'abbinamento al database lo fa l'app.
+`;
+  }
+  return `REGOLE PER I NOMI DEGLI ESERCIZI (FONDAMENTALE):
 Qui sotto ti fornisco l'elenco ESATTO degli esercizi supportati dalla mia app.
 Per ogni esercizio, se nella lista c'è lo STESSO MOVIMENTO (stesso gesto e stesso gruppo muscolare), scrivi in "nome" il nome della lista ESATTAMENTE in quel modo.
 Se nella lista non c'è lo stesso movimento, in "nome" lascia il nome del documento: è meglio un nome non in lista che un esercizio sbagliato (es. una pressa per le gambe non è una chest press).
@@ -80,7 +80,16 @@ In "nomeOriginale" scrivi sempre il nome come appare nel documento.
 
 LISTA ESERCIZI UFFICIALI:
 ${JSON.stringify(nomiUfficiali)}
+`;
+}
 
+function buildAnalyzePrompt(nomiUfficiali) {
+  return `Sei un personal trainer esperto in protocolli di forza e bodybuilding. Analizza questo documento (foto, PDF o testo estratto da Word) che contiene una scheda di allenamento.
+
+ATTENZIONE: L'allenamento potrebbe essere diviso in più giorni (es. Giorno A, Giorno B, Day 1, Day 2).
+Estrai i dati e restituisci SOLO un ARRAY JSON valido contenente un oggetto per ogni giorno di allenamento trovato.
+
+${sezioneNomi(nomiUfficiali)}
 REGOLE PER LE TECNICHE:
 [Classico, Back off, Drop Set, Super Set, Rest Pause, Piramidale, Giant Set, Cluster Set, Top Set, Feeder Set, Warm Up, Myo-reps, AMRAP, Negative, Isometria, Stripping, Trisets, Pre-stancaggio, EMOM, Burnouts].
 
@@ -150,7 +159,7 @@ STRUTTURA JSON:
     "settimanaCorrente": 1,
     "esercizi": [
       {
-        "nome": "NOME DALLA LISTA UFFICIALE (o quello del documento)",
+        "nome": "nome dell'esercizio",
         "nomeOriginale": "nome come scritto nel documento",
         "avvicinamento": 0,
         "workingSet": 3,
@@ -224,9 +233,9 @@ ${payload.testo}` };
 }
 
 async function analyzeWorkoutPhoto(apiKey, payload, options) {
-  const nomiUfficiali = payload?.nomiUfficiali;
+  const nomiUfficiali = Array.isArray(payload?.nomiUfficiali) ? payload.nomiUfficiali : [];
   const documento = parteDocumento(payload);
-  if (!documento || !Array.isArray(nomiUfficiali)) {
+  if (!documento) {
     return { status: 400, body: { error: 'Payload non valido' } };
   }
 
@@ -271,7 +280,50 @@ async function reviewWorkoutFolder(apiKey, payload, options) {
   return { status: 200, body: { text: extractModelText(geminiResp).trim() } };
 }
 
+function buildMatchPrompt(esercizi) {
+  return `Abbina ogni esercizio di una scheda di palestra al nome giusto del database dell'app.
+Per ogni esercizio hai il nome scritto nella scheda ("originale") e alcuni candidati del database.
+Scegli un candidato SOLO se è lo STESSO MOVIMENTO: stesso gesto, stesso gruppo muscolare, stessa posizione (in piedi, seduto, su panca piana o inclinata) e stesso attrezzo se la scheda lo indica.
+Se nessun candidato è lo stesso movimento, "scelto" è null. Meglio null che un esercizio sbagliato.
+Copia il nome scelto ESATTAMENTE come nei candidati.
+
+ESERCIZI:
+${JSON.stringify(esercizi)}
+
+Rispondi SOLO con un array JSON: [{"originale": "...", "scelto": "..." oppure null}]`;
+}
+
+/** Secondo passaggio: abbina i nomi della scheda al database, scegliendo fra candidati dati dall'app. */
+async function matchExerciseNames(apiKey, payload, options) {
+  const esercizi = payload?.esercizi;
+  if (!Array.isArray(esercizi) || esercizi.some((e) => typeof e?.originale !== 'string' || !Array.isArray(e?.candidati))) {
+    return { status: 400, body: { error: 'Payload non valido' } };
+  }
+  if (esercizi.length === 0) return { status: 200, body: { scelte: [] } };
+
+  const geminiResp = await callGemini(apiKey, {
+    contents: [{ role: 'user', parts: [{ text: buildMatchPrompt(esercizi) }] }],
+    // Qui il ragionamento serve: la richiesta è piccola, quindi resta veloce.
+    generationConfig: { responseMimeType: 'application/json', thinkingConfig: { thinkingBudget: 1024 } },
+  }, options);
+
+  let risposte;
+  try {
+    risposte = JSON.parse(extractJsonPayload(extractModelText(geminiResp)));
+  } catch (_) {
+    risposte = [];
+  }
+  const perOriginale = new Map((Array.isArray(risposte) ? risposte : []).map((r) => [r?.originale, r?.scelto]));
+  const scelte = esercizi.map(({ originale, candidati }) => {
+    const scelto = perOriginale.get(originale);
+    return { originale, scelto: candidati.includes(scelto) ? scelto : null };
+  });
+  return { status: 200, body: { scelte } };
+}
+
 module.exports = {
+  matchExerciseNames,
+  buildMatchPrompt,
   GEMINI_ENDPOINTS,
   HttpError,
   callGemini,

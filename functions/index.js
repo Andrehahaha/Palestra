@@ -50,3 +50,4 @@ function endpoint(name, handler) {
 
 exports.analyzeWorkoutPhoto = endpoint('analyzeWorkoutPhoto', ai.analyzeWorkoutPhoto);
 exports.reviewWorkoutFolder = endpoint('reviewWorkoutFolder', ai.reviewWorkoutFolder);
+exports.matchExerciseNames = endpoint('matchExerciseNames', ai.matchExerciseNames);

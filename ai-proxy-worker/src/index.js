@@ -123,6 +123,11 @@ export default {
         return await handleReview(request, env);
       }
 
+      if (url.pathname.endsWith('/matchExerciseNames')) {
+        const { status, body } = await ai.matchExerciseNames(env.GEMINI_API_KEY, await request.json());
+        return json(status, body);
+      }
+
       return json(404, { error: 'Endpoint non trovato' });
     } catch (error) {
       if (error instanceof AuthError) {

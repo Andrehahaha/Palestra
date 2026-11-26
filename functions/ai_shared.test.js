@@ -41,7 +41,7 @@ test('analyze: risposta non JSON diventa 422', async () => {
 
 test('analyze: payload non valido diventa 400 senza chiamare Gemini', async () => {
   const { fetchImpl, calls } = fakeFetch([]);
-  const res = await ai.analyzeWorkoutPhoto('k', { imageBase64: 'x' }, { fetchImpl });
+  const res = await ai.analyzeWorkoutPhoto('k', { nomiUfficiali: [] }, { fetchImpl });
   assert.equal(res.status, 400);
   assert.equal(calls.length, 0);
 });
@@ -149,7 +149,7 @@ test('analyze: ragionamento di Gemini spento (estrazione, deve essere veloce)', 
 test('analyze: prompt su nomi (nomeOriginale, niente forzature), cicli e settimane complete', () => {
   const p = ai.buildAnalyzePrompt([]);
   assert.match(p, /"nomeOriginale"/);
-  assert.match(p, /stesso movimento/i);
+  assert.match(ai.buildAnalyzePrompt(['Squat']), /stesso movimento/i);
   assert.match(p, /prima settimana di quel ciclo/i);
   assert.match(p, /lista completa/i);
 });
@@ -158,4 +158,48 @@ test('analyze: la categoria è il titolo del programma', () => {
   const p = ai.buildAnalyzePrompt([]);
   assert.match(p, /titolo del programma/i);
   assert.doesNotMatch(p, /"categoria": "Importata AI"/);
+});
+
+// --- abbinamento nomi in un secondo passaggio ---
+
+test('analyze: senza lista di nomi funziona e il prompt chiede il nome del documento', async () => {
+  const { fetchImpl, calls } = fakeFetch([{ status: 200, text: gemini('[{"nome":"GG1"}]') }]);
+  const res = await ai.analyzeWorkoutPhoto('k', { fileBase64: 'x', mimeType: 'application/pdf' }, { fetchImpl });
+  assert.equal(res.status, 200);
+  const prompt = calls[0].body.contents[0].parts[0].text;
+  assert.doesNotMatch(prompt, /LISTA ESERCIZI UFFICIALI/);
+  assert.match(prompt, /come scritto nel documento/i);
+});
+
+test('match: sceglie fra i candidati, scarta nomi non in lista', async () => {
+  const risposta = JSON.stringify([
+    { originale: 'Spinte con manubri su panca piana', scelto: 'Panca piana con manubri' },
+    { originale: 'Croci ai cavi dal basso', scelto: 'Nome inventato' },
+    { originale: 'Rematore con appoggio al petto', scelto: null },
+  ]);
+  const { fetchImpl, calls } = fakeFetch([{ status: 200, text: gemini(risposta) }]);
+  const res = await ai.matchExerciseNames('k', {
+    esercizi: [
+      { originale: 'Spinte con manubri su panca piana', candidati: ['Panca piana con manubri', 'Spinte Alternate con Manubri in Piedi'] },
+      { originale: 'Croci ai cavi dal basso', candidati: ['Croci ai Cavi Alti'] },
+      { originale: 'Rematore con appoggio al petto', candidati: ['Rematore con Bilanciere'] },
+    ],
+  }, { fetchImpl });
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body.scelte, [
+    { originale: 'Spinte con manubri su panca piana', scelto: 'Panca piana con manubri' },
+    { originale: 'Croci ai cavi dal basso', scelto: null },
+    { originale: 'Rematore con appoggio al petto', scelto: null },
+  ]);
+  const prompt = calls[0].body.contents[0].parts[0].text;
+  assert.match(prompt, /stesso movimento/i);
+  assert.match(prompt, /Spinte Alternate con Manubri in Piedi/);
+  assert.equal(calls[0].body.generationConfig.responseMimeType, 'application/json');
+});
+
+test('match: payload non valido -> 400', async () => {
+  const { fetchImpl, calls } = fakeFetch([]);
+  const res = await ai.matchExerciseNames('k', { esercizi: 'boh' }, { fetchImpl });
+  assert.equal(res.status, 400);
+  assert.equal(calls.length, 0);
 });

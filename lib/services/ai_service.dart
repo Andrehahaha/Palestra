@@ -416,6 +416,89 @@ class AiService {
         .toList();
   }
 
+  /// Nome del database se l'abbinamento è sicuro (uguale o tradotto dal
+  /// dizionario), altrimenti `null`.
+  static String? _abbinamentoDiretto(String nome, List<String> ufficiali) {
+    final n = _normalizza(nome);
+    for (final u in ufficiali) {
+      if (_normalizza(u) == n) return u;
+    }
+    final tradotto = DizionarioEsercizi.daIngleseAItaliano.entries
+        .where((e) => _normalizza(e.key) == n || _normalizza(e.value) == n)
+        .map((e) => _normalizza(e.value))
+        .firstOrNull;
+    if (tradotto == null) return null;
+    for (final u in ufficiali) {
+      if (_normalizza(u) == tradotto) return u;
+    }
+    return null;
+  }
+
+  /// I [quanti] nomi del database più simili a [nome].
+  static List<String> _candidati(String nome, List<String> ufficiali, {int quanti = 10}) {
+    final n = _normalizza(nome);
+    final token = _tokenizza(nome);
+    double punteggio(String c) {
+      final nc = _normalizza(c);
+      var p = (nc.contains(n) || n.contains(nc)) ? 0.25 : 0.0;
+      p += _similaritaToken(token, _tokenizza(c)) * 0.45;
+      final lunghezza = n.length > nc.length ? n.length : nc.length;
+      p += lunghezza == 0 ? 0 : (1 - _levenshtein(n, nc) / lunghezza) * 0.30;
+      return p;
+    }
+
+    final ordinati = ufficiali.map((c) => (c, punteggio(c))).toList()..sort((a, b) => b.$2.compareTo(a.$2));
+    return ordinati.take(quanti).map((e) => e.$1).toList();
+  }
+
+  /// Abbina i nomi letti dal documento al database: diretto se sicuro,
+  /// altrimenti un secondo passaggio AI sceglie fra i candidati più simili.
+  /// Se non c'è un movimento equivalente (o la chiamata fallisce) resta il
+  /// nome del documento.
+  Future<void> _abbinaNomi(List<dynamic> items, List<String> ufficiali) async {
+    final esercizi = <Map>[];
+    for (final scheda in items.whereType<Map>()) {
+      final liste = [scheda['esercizi'], if (scheda['programma'] is Map) ...(scheda['programma'] as Map).values];
+      for (final lista in liste) {
+        if (lista is List) esercizi.addAll(lista.whereType<Map>());
+      }
+    }
+    for (final e in esercizi) {
+      e['nomeOriginale'] ??= e['nome'];
+    }
+
+    final scelti = <String, String>{};
+    final daChiedere = <Map<String, dynamic>>[];
+    for (final originale in esercizi.map((e) => '${e['nomeOriginale'] ?? ''}'.trim()).toSet()) {
+      if (originale.isEmpty) continue;
+      final diretto = _abbinamentoDiretto(originale, ufficiali);
+      if (diretto != null) {
+        scelti[originale] = diretto;
+      } else if (ufficiali.isNotEmpty) {
+        daChiedere.add({'originale': originale, 'candidati': _candidati(originale, ufficiali)});
+      }
+    }
+
+    if (daChiedere.isNotEmpty) {
+      try {
+        final risposta = await _proxy.post('matchExerciseNames', {'esercizi': daChiedere});
+        final candidati = {for (final d in daChiedere) d['originale'] as String: d['candidati'] as List};
+        for (final s in (risposta['scelte'] as List? ?? const []).whereType<Map>()) {
+          final originale = '${s['originale']}';
+          final scelto = s['scelto'];
+          if (scelto is String && (candidati[originale]?.contains(scelto) ?? false)) scelti[originale] = scelto;
+        }
+      } catch (e) {
+        debugPrint('Abbinamento nomi non riuscito, restano quelli del documento: $e');
+      }
+    }
+
+    for (final e in esercizi) {
+      final originale = '${e['nomeOriginale'] ?? ''}'.trim();
+      e['nome'] = scelti[originale] ?? originale;
+    }
+  }
+
   /// Coppie (nome nel documento, nome scelto) dove i due differiscono.
   static List<(String, String)> _nomiCambiati(List<dynamic> items) {
     final out = <(String, String)>[];
@@ -695,14 +778,16 @@ class AiService {
   Future<EsitoAi<List<Scheda>>> _analizza(Map<String, dynamic> documento) async {
     try {
       final nomi = await _nomiUfficiali();
-      final risultato = await _proxy.post('analyzeWorkoutPhoto', {...documento, 'nomiUfficiali': nomi});
+      // La lista dei nomi non va più all'AI: rallentava la lettura e la portava a
+      // scegliere male. L'abbinamento si fa dopo, con _abbinaNomi.
+      final risultato = await _proxy.post('analyzeWorkoutPhoto', {...documento, 'nomiUfficiali': const <String>[]});
 
       final items = risultato['items'];
       if (items is! List || items.isEmpty) {
         return const EsitoAi.errore('Nessuna scheda riconosciuta. Prova con un file più leggibile.');
       }
 
-      _normalizzaEserciziJson(items, nomi);
+      await _abbinaNomi(items, nomi);
       ultimiNomiCambiati = _nomiCambiati(items);
       final prs = await _caricaPr();
       final compatibili = applicaPrFallback(_normalizzaSchemaSchede(items), prs);
