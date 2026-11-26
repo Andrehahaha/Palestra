@@ -3,9 +3,10 @@
 // Prompt, chiamata a Gemini e parsing della risposta stanno solo qui.
 'use strict';
 
+// v1beta per primo: la modalità JSON (responseMimeType) su v1 non esiste.
 const GEMINI_ENDPOINTS = [
-  'https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent',
   'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
+  'https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent',
   'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent',
 ];
 
@@ -40,7 +41,8 @@ async function callGemini(apiKey, requestBody, { fetchImpl = fetch, endpoints = 
     if (resp.ok) return JSON.parse(text);
 
     fallbackLog.push(`${endpoint} -> ${resp.status}`);
-    const canFallback = resp.status === 404 || (resp.status === 400 && /model|unsupported|not found/i.test(text));
+    const canFallback = resp.status === 404
+      || (resp.status === 400 && /model|unsupported|not found|api version/i.test(text));
     if (canFallback) continue;
 
     throw new HttpError(resp.status, `Gemini error ${resp.status}`, text);

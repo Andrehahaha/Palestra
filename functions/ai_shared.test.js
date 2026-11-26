@@ -114,3 +114,22 @@ test('analyze: il prompt chiede settimane numerate e il ciclo A/B', () => {
   assert.match(p, /alternan/i);
   assert.doesNotMatch(p, /"4": \[/);
 });
+
+test('callGemini: il primo tentativo usa v1beta (la modalità JSON non esiste su v1)', async () => {
+  const { fetchImpl, calls } = fakeFetch([{ status: 200, text: gemini('[]') }]);
+  await ai.analyzeWorkoutPhoto('k', { fileBase64: 'x', mimeType: 'application/pdf', nomiUfficiali: [] }, { fetchImpl });
+  assert.match(calls[0].url, /\/v1beta\//);
+});
+
+test('callGemini: "JSON mode is not enabled for api version" passa all endpoint successivo', async () => {
+  const { fetchImpl, calls } = fakeFetch([
+    { status: 400, text: '{"error":{"message":"JSON mode is not enabled for api version v1. Use api version v1beta instead."}}' },
+    { status: 200, text: gemini('ok') },
+  ]);
+  const res = await ai.reviewWorkoutFolder('k', { nomeCartella: 'C', schede: [] }, {
+    fetchImpl,
+    endpoints: ['https://x/v1/models/a:generateContent', 'https://x/v1beta/models/a:generateContent'],
+  });
+  assert.equal(res.body.text, 'ok');
+  assert.equal(calls.length, 2);
+});
