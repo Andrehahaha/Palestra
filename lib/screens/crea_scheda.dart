@@ -160,7 +160,9 @@ class _CreaSchedaScreenState extends State<CreaSchedaScreen> {
                     // Id e piano del coach restano quelli della scheda modificata.
                     id: originale?.id,
                     programma: _programmaAggiornato(originale),
-                    cicloSettimane: originale?.cicloSettimane,
+                    calendario: originale?.calendario,
+                    durataProgramma: originale?.durataProgramma,
+                    ripartiDaSettimana: originale?.ripartiDaSettimana,
                     nome: _nomeController.text,
                     livello: _livelloSelezionato,
                     categoria: _categoriaController.text.isEmpty ? 'Generale' : _categoriaController.text,

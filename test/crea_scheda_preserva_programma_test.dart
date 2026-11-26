@@ -66,7 +66,8 @@ void main() {
         1: [Esercizio(nome: 'Squat', avvicinamento: 0, workingSet: 99, ripetizioni: '5', recupero: '180')],
         2: [Esercizio(nome: 'Stacco da Terra', avvicinamento: 0, workingSet: 4, ripetizioni: '4', recupero: '180')],
       },
-      cicloSettimane: 2,
+      durataProgramma: 2,
+      ripartiDaSettimana: 1,
     );
 
     Scheda? salvata;
@@ -92,6 +93,7 @@ void main() {
     expect(salvata!.programma![1]!.single.workingSet, 3);
     expect(identical(salvata!.programma![1]!.single, salvata!.esercizi.single), isFalse);
     expect(salvata!.programma![2]!.single.nome, 'Stacco da Terra');
-    expect(salvata!.cicloSettimane, 2);
+    expect(salvata!.durataProgramma, 2);
+    expect(salvata!.ripartiDaSettimana, 1);
   });
 }

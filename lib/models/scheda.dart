@@ -1,4 +1,5 @@
 import 'esercizio.dart';
+import 'settimana_piano.dart';
 
 class Scheda {
   String nome;
@@ -12,8 +13,15 @@ class Scheda {
   /// `null` per le schede create a mano.
   Map<int, List<Esercizio>>? programma;
 
-  /// Lunghezza del ciclo che si ripete (es. 2 per schede A/B alternate).
-  int? cicloSettimane;
+  /// Indicazioni per settimana (RIR relativo, scarico).
+  Map<int, SettimanaPiano>? calendario;
+
+  /// Settimane del programma; dopo l'ultima si riparte da [ripartiDaSettimana].
+  int? durataProgramma;
+
+  /// Settimana da cui ripartire a programma finito (1 per schede A/B alternate).
+  /// `null` = l'ultima settimana continua uguale.
+  int? ripartiDaSettimana;
   static int _idCounter = 0;
   String id;
 
@@ -26,7 +34,9 @@ class Scheda {
     this.settimanaCorrente = 1,
     required this.esercizi,
     this.programma,
-    this.cicloSettimane,
+    this.calendario,
+    this.durataProgramma,
+    this.ripartiDaSettimana,
   }) : id = (id == null || id.trim().isEmpty)
             ? _newId('$nome|$livello|$categoria')
             : id;
@@ -77,7 +87,9 @@ class Scheda {
       'esercizi': esercizi.map((e) => e.toJson()).toList(),
       if (programma != null)
         'programma': programma!.map((k, v) => MapEntry('$k', v.map((e) => e.toJson()).toList())),
-      if (cicloSettimane != null) 'cicloSettimane': cicloSettimane,
+      if (calendario != null) 'calendario': calendario!.map((k, v) => MapEntry('$k', v.toJson())),
+      if (durataProgramma != null) 'durataProgramma': durataProgramma,
+      if (ripartiDaSettimana != null) 'ripartiDaSettimana': ripartiDaSettimana,
     };
   }
 
@@ -97,8 +109,21 @@ class Scheda {
       settimanaCorrente: isLegacyWithoutId ? 1 : (json['settimanaCorrente'] ?? 1),
       esercizi: (json['esercizi'] as List?)?.map((e) => Esercizio.fromJson(e)).toList() ?? [],
       programma: _programmaDaJson(json['programma']),
-      cicloSettimane: (json['cicloSettimane'] as num?)?.toInt(),
+      calendario: _calendarioDaJson(json['calendario']),
+      durataProgramma: (json['durataProgramma'] as num?)?.toInt(),
+      ripartiDaSettimana: (json['ripartiDaSettimana'] as num?)?.toInt(),
     );
+  }
+
+  static Map<int, SettimanaPiano>? _calendarioDaJson(dynamic raw) {
+    if (raw is! Map) return null;
+    final out = <int, SettimanaPiano>{};
+    for (final e in raw.entries) {
+      final settimana = int.tryParse(e.key.toString().trim());
+      final info = SettimanaPiano.fromJson(e.value);
+      if (settimana != null && settimana >= 1 && info != null) out[settimana] = info;
+    }
+    return out;
   }
 
   static Map<int, List<Esercizio>>? _programmaDaJson(dynamic raw) {

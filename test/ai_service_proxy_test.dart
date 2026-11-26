@@ -166,7 +166,7 @@ void main() {
         ],
       })).analizzaFile(nomeFile: 'a.png', bytes: Uint8List.fromList([1]));
       expect(esito.valore!.single.programma!.keys, [1]);
-      expect(esito.valore!.single.cicloSettimane, isNull);
+      expect(esito.valore!.single.ripartiDaSettimana, isNull);
     });
 
     test('file oltre 15 MB: errore, nessuna chiamata', () async {
@@ -228,19 +228,57 @@ void main() {
       expect(s.programma![2]!.single.nome, 'Panca Piana');
     });
 
-    test('ciclo valido tenuto, ciclo non valido scartato', () async {
+    test('schede A/B: durata 2, si riparte dalla 1', () async {
+      final ab = await importa({
+        'nome': 'GG1',
+        'esercizi': [es('Squat')],
+        'programma': {'2': [es('Panca Piana')]},
+        'durataSettimane': 2,
+        'ripartiDaSettimana': 1,
+      });
+      expect(ab.durataProgramma, 2);
+      expect(ab.ripartiDaSettimana, 1);
+    });
+
+    test('vecchio campo cicloSettimane letto come durata con ripartenza dalla 1', () async {
       final ab = await importa({
         'nome': 'GG1',
         'esercizi': [es('Squat')],
         'programma': {'2': [es('Panca Piana')]},
         'cicloSettimane': 2,
       });
-      expect(ab.cicloSettimane, 2);
+      expect(ab.durataProgramma, 2);
+      expect(ab.ripartiDaSettimana, 1);
+    });
 
-      final troppoLungo = await importa({'nome': 'GG1', 'esercizi': [es('Squat')], 'cicloSettimane': 4});
-      expect(troppoLungo.cicloSettimane, isNull);
-      final uno = await importa({'nome': 'GG1', 'esercizi': [es('Squat')], 'programma': {'2': [es('Squat')]}, 'cicloSettimane': 1});
-      expect(uno.cicloSettimane, isNull);
+    test('ripartenza oltre la durata scartata; durata mancante ricavata dal piano', () async {
+      final oltre = await importa({'nome': 'GG1', 'esercizi': [es('Squat')], 'durataSettimane': 5, 'ripartiDaSettimana': 9});
+      expect(oltre.ripartiDaSettimana, isNull);
+      final senzaDurata = await importa({
+        'nome': 'GG1',
+        'esercizi': [es('Squat')],
+        'calendario': {'15': {'scarico': true}},
+        'ripartiDaSettimana': 6,
+      });
+      expect(senzaDurata.durataProgramma, 15);
+      expect(senzaDurata.ripartiDaSettimana, 6);
+    });
+
+    test('calendario: chiavi testuali e intervalli espansi, valori non validi scartati', () async {
+      final s = await importa({
+        'nome': 'Upper',
+        'esercizi': [es('Squat')],
+        'calendario': {
+          'Sett. 1': {'rirDelta': '+2'},
+          '5': {'scarico': true},
+          '7-9': {'rirDelta': 0},
+          '3': {'rirDelta': 'boh'},
+        },
+      });
+      expect(s.calendario!.keys.toSet(), {1, 5, 7, 8, 9});
+      expect(s.calendario![1]!.rirDelta, 2);
+      expect(s.calendario![5]!.scarico, isTrue);
+      expect(s.calendario![8]!.rirDelta, 0);
     });
   });
 

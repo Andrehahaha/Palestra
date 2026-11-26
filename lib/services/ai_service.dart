@@ -8,10 +8,12 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/scheda.dart';
+import '../models/settimana_piano.dart';
 import '../services/api_esercizi.dart'; 
 import '../services/dizionario_esercizi.dart';
 import '../services/archivio_atleta.dart';
 import '../services/carichi.dart';
+import '../services/riepilogo_import.dart';
 import '../services/testo_docx.dart';
 import '../services/workload_calculator.dart';
 
@@ -390,11 +392,7 @@ class AiService {
           final rawId = scheda['id']?.toString();
           final hasStableId = rawId != null && rawId.trim().isNotEmpty;
 
-          final piano = _pianoSettimane(
-            _normalizzaListaEsercizi(scheda['esercizi']),
-            scheda['programma'],
-            scheda['cicloSettimane'],
-          );
+          final piano = _pianoSettimane(_normalizzaListaEsercizi(scheda['esercizi']), scheda);
           final esercizi = piano.esercizi;
           final programma = {for (final e in piano.settimane.entries) '${e.key}': e.value};
 
@@ -407,41 +405,89 @@ class AiService {
             'settimanaCorrente': hasStableId ? _toIntOrDefault(scheda['settimanaCorrente'], 1) : 1,
             'esercizi': esercizi,
             'programma': programma,
-            'cicloSettimane': piano.ciclo,
+            'calendario': {for (final e in piano.calendario.entries) '${e.key}': e.value.toJson()},
+            'durataProgramma': piano.durata,
+            'ripartiDaSettimana': piano.ripartiDa,
           };
         })
         .toList();
   }
 
-  /// Controllo delle settimane lette dall'AI: chiavi ridotte al numero
-  /// ("Settimana 2", "W2" -> 2), W1 garantita (se manca, la prima settimana
-  /// presente diventa la W1 e le altre scalano), W1 salvata anche nel piano,
-  /// ciclo tenuto solo se coerente.
-  static ({List<Map<String, dynamic>> esercizi, Map<int, List<Map<String, dynamic>>> settimane, int? ciclo})
-      _pianoSettimane(List<Map<String, dynamic>> base, dynamic programmaRaw, dynamic cicloRaw) {
+  /// Settimane indicate da una chiave: "Sett. 2" -> [2], "7-9" -> [7, 8, 9].
+  static List<int> _settimaneDaChiave(Object? chiave) {
+    final testo = '$chiave';
+    final intervallo = RegExp(r'(\d+)\s*[-–]\s*(\d+)').firstMatch(testo);
+    if (intervallo != null) {
+      final da = int.parse(intervallo.group(1)!);
+      final a = int.parse(intervallo.group(2)!);
+      if (da >= 1 && a >= da && a - da < 60) return [for (var w = da; w <= a; w++) w];
+    }
+    final n = int.tryParse(RegExp(r'\d+').firstMatch(testo)?.group(0) ?? '');
+    return n != null && n >= 1 ? [n] : const [];
+  }
+
+  static int? _intero(Object? v) => v is num ? v.toInt() : int.tryParse('${v ?? ''}'.trim());
+
+  /// Controllo delle settimane lette dall'AI:
+  /// - chiavi ridotte al numero ("Settimana 2", "W2" -> 2; nel calendario
+  ///   anche intervalli "7-9");
+  /// - W1 garantita: se manca, la prima settimana presente diventa la W1 e le
+  ///   altre scalano (calendario compreso); la W1 è salvata anche nel piano;
+  /// - durata ricavata dal piano se manca; ripartenza tenuta solo se coerente.
+  static ({
+    List<Map<String, dynamic>> esercizi,
+    Map<int, List<Map<String, dynamic>>> settimane,
+    Map<int, SettimanaPiano> calendario,
+    int? durata,
+    int? ripartiDa,
+  }) _pianoSettimane(List<Map<String, dynamic>> base, Map<String, dynamic> scheda) {
     var settimane = <int, List<Map<String, dynamic>>>{};
+    final programmaRaw = scheda['programma'];
     if (programmaRaw is Map) {
       for (final e in programmaRaw.entries) {
-        final numero = int.tryParse(RegExp(r'\d+').firstMatch(e.key.toString())?.group(0) ?? '');
-        if (numero == null || numero < 1) continue;
+        final numeri = _settimaneDaChiave(e.key);
         final lista = _normalizzaListaEsercizi(e.value);
-        if (lista.isNotEmpty) settimane[numero] = lista;
+        if (numeri.length == 1 && lista.isNotEmpty) settimane[numeri.single] = lista;
+      }
+    }
+
+    var calendario = <int, SettimanaPiano>{};
+    final calendarioRaw = scheda['calendario'];
+    if (calendarioRaw is Map) {
+      for (final e in calendarioRaw.entries) {
+        final info = SettimanaPiano.fromJson(e.value);
+        if (info == null) continue;
+        for (final w in _settimaneDaChiave(e.key)) {
+          calendario[w] = info;
+        }
       }
     }
 
     var esercizi = base;
     if (esercizi.isEmpty && settimane.isNotEmpty) {
-      final prima = settimane.keys.reduce((a, b) => a < b ? a : b);
-      settimane = {for (final e in settimane.entries) e.key - prima + 1: e.value};
+      final spostamento = settimane.keys.reduce((a, b) => a < b ? a : b) - 1;
+      settimane = {for (final e in settimane.entries) e.key - spostamento: e.value};
+      calendario = {
+        for (final e in calendario.entries)
+          if (e.key - spostamento >= 1) e.key - spostamento: e.value,
+      };
       esercizi = settimane[1]!;
     }
     if (esercizi.isNotEmpty) settimane[1] = esercizi;
 
-    final ciclo = cicloRaw is num ? cicloRaw.toInt() : int.tryParse('${cicloRaw ?? ''}');
-    final ultima = settimane.isEmpty ? 0 : settimane.keys.reduce((a, b) => a > b ? a : b);
-    final cicloValido = ciclo != null && ciclo >= 2 && ciclo <= ultima ? ciclo : null;
+    final ultimaScritta = [...settimane.keys, ...calendario.keys, 1].reduce((a, b) => a > b ? a : b);
+    var durata = _intero(scheda['durataSettimane'] ?? scheda['durataProgramma']);
+    var ripartiDa = _intero(scheda['ripartiDaSettimana']);
+    final cicloVecchio = _intero(scheda['cicloSettimane']);
+    if (durata == null && ripartiDa == null && cicloVecchio != null && cicloVecchio >= 2) {
+      // Formato precedente: un ciclo di N settimane che riparte dalla prima.
+      durata = cicloVecchio;
+      ripartiDa = 1;
+    }
+    if (durata == null || durata < ultimaScritta) durata = ultimaScritta;
+    if (ripartiDa != null && (ripartiDa < 1 || ripartiDa > durata)) ripartiDa = null;
 
-    return (esercizi: esercizi, settimane: settimane, ciclo: cicloValido);
+    return (esercizi: esercizi, settimane: settimane, calendario: calendario, durata: durata, ripartiDa: ripartiDa);
   }
 
   static List<Map<String, dynamic>> _normalizzaListaEsercizi(dynamic raw) {
@@ -601,7 +647,9 @@ class AiService {
       _normalizzaEserciziJson(items, nomi);
       final prs = await _caricaPr();
       final compatibili = applicaPrFallback(_normalizzaSchemaSchede(items), prs);
-      return EsitoAi.ok(compatibili.map((e) => Scheda.fromJson(e)).toList());
+      final schede = compatibili.map((e) => Scheda.fromJson(e)).toList();
+      debugPrint(RiepilogoImport.testo(schede));
+      return EsitoAi.ok(schede);
     } on AiProxyException catch (e) {
       debugPrint('Errore AI import: $e');
       return EsitoAi.errore(_messaggioErrore(e));

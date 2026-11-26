@@ -114,9 +114,22 @@ PROGRAMMAZIONE SU PIÙ SETTIMANE:
 - Se un intervallo dice "settimane 1-3" e poi cambia dalla successiva, metti solo la settimana in cui cambia: quelle non scritte ripetono la precedente.
 - Se c'è una sola settimana, "programma" è {}.
 
+IL RIR NEGLI ESERCIZI:
+- In "rirTarget" di ogni esercizio metti il RIR scritto nella tabella del giorno (es. "1-2", "0-1", "2-3"), senza applicare le variazioni settimanali.
+
+CALENDARIO DELLE SETTIMANE (uguale per tutti i giorni, ripetilo su ogni giorno):
+- Se il documento indica per settimana una variazione del RIR rispetto alla tabella (es. "Tabella +2", "Tabella +1", "Tabella"), metti in "calendario" la settimana con "rirDelta": 2, 1, 0.
+- Se una settimana è di scarico/deload, metti "scarico": true. Non riscrivere gli esercizi dello scarico: lo calcola l'app.
+- Chiave = numero della settimana come stringa; per un intervallo puoi usare "7-9".
+- Se il documento non indica nulla del genere, "calendario" è {}.
+
+DURATA E RIPARTENZA:
+- "durataSettimane": numero totale di settimane del programma (es. 15), se indicato.
+- "ripartiDaSettimana": se il documento dice da dove ricominciare a programma finito (es. "poi riparti dal ciclo 2", dove il ciclo 2 inizia alla settimana 6 -> 6), altrimenti null.
+
 SCHEDE CHE SI ALTERNANO:
 - Se il documento dice che due o più schede si alternano a settimane (es. "scheda A e scheda B alternate"), restituiscile come UN solo giorno: settimana 1 = A in "esercizi", settimana 2 = B in "programma", e così via.
-- In quel caso aggiungi "cicloSettimane": numero di schede che si alternano (es. 2 per A/B). Altrimenti "cicloSettimane": null.
+- In quel caso "durataSettimane" = numero di schede che si alternano (es. 2) e "ripartiDaSettimana": 1.
 
 REGOLE DI PROGRESSIONE:
 - Se il documento indica come progredire (es. "+2,5 kg a settimana", "+5% ogni settimana", "RIR 2 dalla settimana 3"), aggiungi all'esercizio "progressione": {"daSettimana": n, "aSettimana": n o null, "incrementoKg": numero o null, "incrementoPercentuale": numero o null, "rirTarget": stringa o null, "nota": "testo originale della regola"}.
@@ -154,7 +167,12 @@ STRUTTURA JSON:
     "programma": {
       "2": [ { "nome": "...", "workingSet": 4, "ripetizioni": "6", "tecniche": ["Classico"] } ]
     },
-    "cicloSettimane": null
+    "calendario": {
+      "1": { "rirDelta": 2 },
+      "2": { "scarico": true }
+    },
+    "durataSettimane": null,
+    "ripartiDaSettimana": null
   }
 ]
 

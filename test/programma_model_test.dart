@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:palestra/models/esercizio.dart';
 import 'package:palestra/models/regola_progressione.dart';
 import 'package:palestra/models/scheda.dart';
+import 'package:palestra/models/settimana_piano.dart';
 
 Map<String, dynamic> _es(String nome, {int ws = 3}) =>
     Esercizio(nome: nome, avvicinamento: 0, workingSet: ws, ripetizioni: '8', recupero: '90').toJson();
@@ -67,10 +68,25 @@ void main() {
       expect(copia.esercizi.single.progressione!.nota, '+2,5 kg');
     });
 
-    test('cicloSettimane nel round trip', () {
-      final s = Scheda(nome: 'GG1', livello: 'Base', id: 'c', esercizi: [], programma: {}, cicloSettimane: 2);
-      expect(Scheda.fromJson(s.toJson()).cicloSettimane, 2);
-      expect(Scheda.fromJson({'id': 'd', 'nome': 'X', 'esercizi': []}).cicloSettimane, isNull);
+    test('calendario, durata e ripartenza nel round trip', () {
+      final s = Scheda(
+        nome: 'GG1',
+        livello: 'Base',
+        id: 'c',
+        esercizi: [],
+        programma: {},
+        calendario: {1: const SettimanaPiano(rirDelta: 2), 5: const SettimanaPiano(scarico: true)},
+        durataProgramma: 15,
+        ripartiDaSettimana: 6,
+      );
+      final copia = Scheda.fromJson(s.toJson());
+      expect(copia.calendario![1]!.rirDelta, 2);
+      expect(copia.calendario![5]!.scarico, isTrue);
+      expect(copia.durataProgramma, 15);
+      expect(copia.ripartiDaSettimana, 6);
+      final mano = Scheda.fromJson({'id': 'd', 'nome': 'X', 'esercizi': []});
+      expect(mano.calendario, isNull);
+      expect(mano.ripartiDaSettimana, isNull);
     });
 
     test('scheda fatta a mano: programma null', () {

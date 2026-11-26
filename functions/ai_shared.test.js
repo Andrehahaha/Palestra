@@ -107,11 +107,16 @@ test('analyze: il prompt chiede programma e progressione senza inventare', () =>
   assert.match(p, /non inventare/i);
 });
 
-test('analyze: il prompt chiede settimane numerate e il ciclo A/B', () => {
+test('analyze: il prompt chiede settimane numerate, calendario, durata e ripartenza', () => {
   const p = ai.buildAnalyzePrompt([]);
-  assert.match(p, /"cicloSettimane"/);
   assert.match(p, /1, 2, 3/);
   assert.match(p, /alternan/i);
+  assert.match(p, /"calendario"/);
+  assert.match(p, /"rirDelta"/);
+  assert.match(p, /"scarico"/);
+  assert.match(p, /"durataSettimane"/);
+  assert.match(p, /"ripartiDaSettimana"/);
+  assert.doesNotMatch(p, /cicloSettimane/);
   assert.doesNotMatch(p, /"4": \[/);
 });
 

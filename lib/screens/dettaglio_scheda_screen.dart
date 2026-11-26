@@ -157,7 +157,20 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
       return;
     }
 
-    final passo = ProgrammaSettimane.decidi(widget.scheda, targetWeek, haSnapshotAtleta: false);
+    final settimaneAtleta = {
+      for (final e in _weekSnapshots.entries) e.key: Scheda.fromJson(Map<String, dynamic>.from(e.value)).esercizi,
+    };
+    final passo = ProgrammaSettimane.decidi(
+      widget.scheda,
+      targetWeek,
+      haSnapshotAtleta: false,
+      ultimaSettimanaNormale: ProgrammaSettimane.ultimaSettimanaNormale(
+        widget.scheda,
+        settimaneAtleta,
+        corrente: widget.scheda.settimanaCorrente,
+        attuale: widget.scheda.esercizi,
+      ),
+    );
     if (passo is UsaProgramma) {
       // Le regole di progressione restano sugli esercizi con lo stesso nome.
       final regole = {for (final e in widget.scheda.esercizi) e.nome: e.progressione};
@@ -169,12 +182,6 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
         widget.scheda.settimanaCorrente = targetWeek;
       });
       await _applicaPrSuSchedaAperta();
-      _snapshotCurrentWeek();
-      _scheduleBozzaSave();
-      return;
-    }
-    if (passo is CopiaPrecedente) {
-      setState(() => ProgrammaSettimane.copiaSettimana(widget.scheda, targetWeek));
       _snapshotCurrentWeek();
       _scheduleBozzaSave();
       return;
