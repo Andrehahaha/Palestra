@@ -61,8 +61,13 @@ settimana.
 7. Pulsante "Importa da file" per atleta e coach; il coach invia tutti i
    giorni; la modifica di una scheda non perde più id e piano.
 
+**Correzione: cicli e schede alternate.** La durata del ciclo non è fissa
+(2, 3, 4 settimane...) e spesso le schede A e B si alternano. Ora un giorno
+alternato è W1 = A, W2 = B con la lunghezza del ciclo, e l'app lo ripete.
+Le settimane vanno numerate 1, 2, 3; all'import controllo comunque: dalle
+etichette tengo il numero, se manca la W1 la prima settimana diventa la W1,
+e il ciclo lo tengo solo se ha senso.
+
 **Da tenere d'occhio.**
 - Va ridistribuito il proxy (Worker e Functions) per usare PDF e Word.
-- Se il foglio scrive le settimane in modo strano (es. "Settimana 4" come
-  chiave), quella settimana viene scartata in silenzio.
 - Una regola del coach non si può ancora togliere dall'app.
