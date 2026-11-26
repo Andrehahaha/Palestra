@@ -9,11 +9,13 @@ import 'dart:math';
 import '../models/scheda.dart';
 import '../models/allenamento.dart';
 import '../models/esercizio.dart';
+import '../models/regola_progressione.dart';
 import '../models/serie.dart';
 import 'crea_esercizio.dart';
 import 'settimana_successiva_screen.dart';
 import '../services/api_esercizi.dart';
 import '../services/sessioni_allenamento.dart';
+import '../services/programma_settimane.dart';
 import '../services/stretching_scheda.dart';
 import '../services/archivio_atleta.dart';
 import '../services/carichi.dart';
@@ -155,10 +157,38 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
       return;
     }
 
+    final passo = ProgrammaSettimane.decidi(widget.scheda, targetWeek, haSnapshotAtleta: false);
+    if (passo is UsaProgramma) {
+      // Le regole di progressione restano sugli esercizi con lo stesso nome.
+      final regole = {for (final e in widget.scheda.esercizi) e.nome: e.progressione};
+      for (final e in passo.esercizi) {
+        e.progressione ??= regole[e.nome];
+      }
+      setState(() {
+        widget.scheda.esercizi = passo.esercizi;
+        widget.scheda.settimanaCorrente = targetWeek;
+      });
+      await _applicaPrSuSchedaAperta();
+      _snapshotCurrentWeek();
+      _scheduleBozzaSave();
+      return;
+    }
+    if (passo is CopiaPrecedente) {
+      setState(() => ProgrammaSettimane.copiaSettimana(widget.scheda, targetWeek));
+      _snapshotCurrentWeek();
+      _scheduleBozzaSave();
+      return;
+    }
+    final regolePrecompilate = passo is ProgressioneGuidata ? passo.regole : const <int, RegolaProgressione>{};
+
+    if (!mounted) return;
     final aggiornata = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => SettimanaSuccessivaScreen(scheda: widget.scheda),
+        builder: (context) => SettimanaSuccessivaScreen(
+          scheda: widget.scheda,
+          regolePrecompilate: regolePrecompilate,
+        ),
       ),
     );
     if (aggiornata != null) {

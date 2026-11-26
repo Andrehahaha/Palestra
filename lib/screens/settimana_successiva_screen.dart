@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 
 import '../models/esercizio.dart';
+import '../models/regola_progressione.dart';
 import '../models/scheda.dart';
 import '../services/carichi.dart';
 import '../services/workload_calculator.dart';
@@ -130,7 +131,15 @@ void applyProgressioneToExerciseForTest({
 class SettimanaSuccessivaScreen extends StatefulWidget {
   final Scheda scheda;
 
-  const SettimanaSuccessivaScreen({super.key, required this.scheda});
+  /// Regole del piano del coach da usare come valori iniziali
+  /// (indice esercizio -> regola).
+  final Map<int, RegolaProgressione> regolePrecompilate;
+
+  const SettimanaSuccessivaScreen({
+    super.key,
+    required this.scheda,
+    this.regolePrecompilate = const {},
+  });
 
   @override
   State<SettimanaSuccessivaScreen> createState() => _SettimanaSuccessivaScreenState();
@@ -144,9 +153,10 @@ class _SettimanaSuccessivaScreenState extends State<SettimanaSuccessivaScreen> {
   @override
   void initState() {
     super.initState();
-    _editors = widget.scheda.esercizi.map((esercizio) {
-      return _ProgressEditorState.fromExercise(esercizio);
-    }).toList();
+    _editors = [
+      for (var i = 0; i < widget.scheda.esercizi.length; i++)
+        _ProgressEditorState.fromExercise(widget.scheda.esercizi[i], widget.regolePrecompilate[i]),
+    ];
     _caricaPreferenzaToggle();
 
   }
@@ -308,6 +318,13 @@ class _SettimanaSuccessivaScreenState extends State<SettimanaSuccessivaScreen> {
                     isPercent ? 'Modalita: Percentuale del massimale (1RM)' : 'Modalita: RIR',
                     style: const TextStyle(color: Colors.grey),
                   ),
+                  if (widget.regolePrecompilate[index]?.nota != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      'Dal piano del coach: ${widget.regolePrecompilate[index]!.nota}',
+                      style: const TextStyle(color: Colors.amber, fontStyle: FontStyle.italic),
+                    ),
+                  ],
                   const SizedBox(height: 10),
                   if (isPercent)
                     Row(
@@ -474,14 +491,15 @@ class _ProgressEditorState {
     required this.incrementoController,
   });
 
-  factory _ProgressEditorState.fromExercise(Esercizio esercizio) {
+  factory _ProgressEditorState.fromExercise(Esercizio esercizio, [RegolaProgressione? regola]) {
+    String numero(double? v) => v == null ? '' : v.toString();
     return _ProgressEditorState(
-      rirController: TextEditingController(text: esercizio.rirTarget ?? ''),
+      rirController: TextEditingController(text: regola?.rirTarget ?? esercizio.rirTarget ?? ''),
       massimaleController: TextEditingController(text: esercizio.massimaleKg?.toString() ?? ''),
       percentualeController: TextEditingController(text: esercizio.percentualeMassimale?.toString() ?? ''),
-      incrementoPercentualeController: TextEditingController(),
+      incrementoPercentualeController: TextEditingController(text: numero(regola?.incrementoPercentuale)),
       percentualiSerieController: TextEditingController(),
-      incrementoController: TextEditingController(),
+      incrementoController: TextEditingController(text: numero(regola?.incrementoKg)),
     );
   }
 
