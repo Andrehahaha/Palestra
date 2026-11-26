@@ -6,6 +6,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:palestra/models/scheda.dart';
 import 'package:palestra/services/ai_service.dart';
 
+import 'testo_docx_test.dart' show docxDi;
+
 class FakeProxy implements ProxyAi {
   FakeProxy({this.risposta, this.errore});
 
@@ -100,6 +102,93 @@ void main() {
 
       final vuoto = await _service(FakeProxy(risposta: {'text': ' '})).valutaCartella('Forza', []);
       expect(vuoto.ok, isFalse);
+    });
+  });
+
+  group('analizzaFile', () {
+    final risposta = {
+      'items': [
+        {
+          'nome': 'GG1',
+          'esercizi': [
+            {
+              'nome': 'Bench Press',
+              'workingSet': 3,
+              'progressione': {'daSettimana': 2, 'aSettimana': 3, 'incrementoKg': 2.5, 'nota': '+2,5 kg a settimana'},
+            },
+          ],
+          'programma': {
+            '4': [
+              {'nome': 'panca PIANA', 'workingSet': 6},
+            ],
+          },
+        },
+      ],
+    };
+
+    test('PDF: inviato come file con il suo tipo', () async {
+      final proxy = FakeProxy(risposta: risposta);
+      final esito = await _service(proxy).analizzaFile(nomeFile: 'scheda.PDF', bytes: Uint8List.fromList([1, 2]));
+      expect(esito.ok, isTrue);
+      final payload = proxy.chiamate.single.$2;
+      expect(payload['mimeType'], 'application/pdf');
+      expect(payload['fileBase64'], base64Encode([1, 2]));
+      expect(payload.containsKey('imageBase64'), isFalse);
+    });
+
+    test('Word: inviato il testo estratto', () async {
+      final proxy = FakeProxy(risposta: risposta);
+      final docx = docxDi('<w:tbl><w:tr><w:tc><w:p><w:r><w:t>Panca</w:t></w:r></w:p></w:tc>'
+          '<w:tc><w:p><w:r><w:t>3x8</w:t></w:r></w:p></w:tc></w:tr></w:tbl>');
+      await _service(proxy).analizzaFile(nomeFile: 'programma.docx', bytes: docx);
+      expect(proxy.chiamate.single.$2['testo'], contains('Panca\t3x8'));
+      expect(proxy.chiamate.single.$2.containsKey('fileBase64'), isFalse);
+    });
+
+    test('programma e regola normalizzati come gli esercizi', () async {
+      final esito = await _service(FakeProxy(risposta: risposta))
+          .analizzaFile(nomeFile: 'a.jpg', bytes: Uint8List.fromList([1]));
+      final scheda = esito.valore!.single;
+      expect(scheda.programma!.keys, [4]);
+      expect(scheda.programma![4]!.single.nome, 'Panca Piana');
+      expect(scheda.programma![4]!.single.workingSet, 6);
+      final regola = scheda.esercizi.single.progressione!;
+      expect(regola.incrementoKg, 2.5);
+      expect(regola.nota, '+2,5 kg a settimana');
+    });
+
+    test('proxy vecchio senza programma: programma vuoto, non null', () async {
+      final esito = await _service(FakeProxy(risposta: {
+        'items': [
+          {'nome': 'GG1', 'esercizi': [{'nome': 'Squat'}]},
+        ],
+      })).analizzaFile(nomeFile: 'a.png', bytes: Uint8List.fromList([1]));
+      expect(esito.valore!.single.programma, isEmpty);
+      expect(esito.valore!.single.programma, isNotNull);
+    });
+
+    test('file oltre 15 MB: errore, nessuna chiamata', () async {
+      final proxy = FakeProxy(risposta: risposta);
+      final esito = await _service(proxy)
+          .analizzaFile(nomeFile: 'grande.pdf', bytes: Uint8List(15 * 1024 * 1024 + 1));
+      expect(esito.errore, contains('15 MB'));
+      expect(proxy.chiamate, isEmpty);
+    });
+
+    test('Word senza testo o rotto: errore, nessuna chiamata', () async {
+      final proxy = FakeProxy(risposta: risposta);
+      final vuoto = await _service(proxy).analizzaFile(nomeFile: 'v.docx', bytes: docxDi(''));
+      final rotto = await _service(proxy).analizzaFile(nomeFile: 'r.docx', bytes: Uint8List.fromList([1, 2, 3]));
+      expect(vuoto.ok, isFalse);
+      expect(rotto.ok, isFalse);
+      expect(proxy.chiamate, isEmpty);
+    });
+
+    test('formato non supportato', () async {
+      final proxy = FakeProxy(risposta: risposta);
+      final esito = await _service(proxy).analizzaFile(nomeFile: 'piano.xlsx', bytes: Uint8List.fromList([1]));
+      expect(esito.errore, contains('Formato non supportato'));
+      expect(proxy.chiamate, isEmpty);
     });
   });
 

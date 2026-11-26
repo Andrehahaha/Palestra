@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -11,6 +12,7 @@ import '../services/api_esercizi.dart';
 import '../services/dizionario_esercizi.dart';
 import '../services/archivio_atleta.dart';
 import '../services/carichi.dart';
+import '../services/testo_docx.dart';
 import '../services/workload_calculator.dart';
 
 class AiProxyException implements Exception {
@@ -267,13 +269,18 @@ class AiService {
   static void _normalizzaEserciziJson(List<dynamic> jsonDecodificato, List<String> ufficiali) {
     for (final scheda in jsonDecodificato) {
       if (scheda is! Map<String, dynamic>) continue;
-      final esercizi = scheda['esercizi'];
-      if (esercizi is! List) continue;
-
-      for (final esercizio in esercizi) {
-        if (esercizio is! Map<String, dynamic>) continue;
-        final nomeRaw = esercizio['nome']?.toString() ?? '';
-        esercizio['nome'] = _risolviNomeEsercizio(nomeRaw, ufficiali);
+      final programma = scheda['programma'];
+      final liste = [
+        scheda['esercizi'],
+        if (programma is Map) ...programma.values,
+      ];
+      for (final esercizi in liste) {
+        if (esercizi is! List) continue;
+        for (final esercizio in esercizi) {
+          if (esercizio is! Map) continue;
+          final nomeRaw = esercizio['nome']?.toString() ?? '';
+          esercizio['nome'] = _risolviNomeEsercizio(nomeRaw, ufficiali);
+        }
       }
     }
   }
@@ -365,8 +372,29 @@ class AiService {
           final rawId = scheda['id']?.toString();
           final hasStableId = rawId != null && rawId.trim().isNotEmpty;
 
-          final eserciziRaw = scheda['esercizi'];
-          final esercizi = (eserciziRaw is List ? eserciziRaw : <dynamic>[])
+          final esercizi = _normalizzaListaEsercizi(scheda['esercizi']);
+          final programmaRaw = scheda['programma'];
+          final programma = <String, dynamic>{
+            if (programmaRaw is Map)
+              for (final e in programmaRaw.entries) e.key.toString(): _normalizzaListaEsercizi(e.value),
+          };
+
+          return {
+            'id': hasStableId ? rawId : null,
+            'nome': scheda['nome']?.toString().trim().isNotEmpty == true ? scheda['nome'] : 'Scheda Importata',
+            'livello': scheda['livello']?.toString().trim().isNotEmpty == true ? scheda['livello'] : 'Intermedio',
+            'categoria': scheda['categoria']?.toString().trim().isNotEmpty == true ? scheda['categoria'] : 'Importata AI',
+            'continuativa': scheda['continuativa'] ?? true,
+            'settimanaCorrente': hasStableId ? _toIntOrDefault(scheda['settimanaCorrente'], 1) : 1,
+            'esercizi': esercizi,
+            'programma': programma,
+          };
+        })
+        .toList();
+  }
+
+  static List<Map<String, dynamic>> _normalizzaListaEsercizi(dynamic raw) {
+    return (raw is List ? raw : <dynamic>[])
               .whereType<Map>()
               .map((rawEs) {
                 final es = Map<String, dynamic>.from(rawEs.cast<String, dynamic>());
@@ -416,21 +444,10 @@ class AiService {
                   'massimaleKg': modalita == 'percentuale' ? massimaleFinale : null,
                   'caricoTargetKg': _toDoubleOrNull(es['caricoTargetKg']),
                   'serieAttive': es['serieAttive'] is List ? es['serieAttive'] : <dynamic>[],
+                  'progressione': es['progressione'],
                 };
               })
               .toList();
-
-          return {
-            'id': hasStableId ? rawId : null,
-            'nome': scheda['nome']?.toString().trim().isNotEmpty == true ? scheda['nome'] : 'Scheda Importata',
-            'livello': scheda['livello']?.toString().trim().isNotEmpty == true ? scheda['livello'] : 'Intermedio',
-            'categoria': scheda['categoria']?.toString().trim().isNotEmpty == true ? scheda['categoria'] : 'Importata AI',
-            'continuativa': scheda['continuativa'] ?? true,
-            'settimanaCorrente': hasStableId ? _toIntOrDefault(scheda['settimanaCorrente'], 1) : 1,
-            'esercizi': esercizi,
-          };
-        })
-        .toList();
   }
 
   /// Normalizza le schede grezze restituite dall'AI (nomi esercizi e schema).
@@ -470,19 +487,64 @@ class AiService {
     return hasDetails ? 'Errore AI: $details' : e.message;
   }
 
-  /// Legge la foto di una scheda e restituisce le schede trovate.
+  static const int maxBytesFile = 15 * 1024 * 1024;
+
+  static const Map<String, String> _mimePerEstensione = {
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'png': 'image/png',
+    'heic': 'image/heic',
+    'pdf': 'application/pdf',
+  };
+
+  /// Estensioni accettate da "Importa da file".
+  static const List<String> estensioniSupportate = ['jpg', 'jpeg', 'png', 'heic', 'pdf', 'docx'];
+
+  /// Legge la foto di una scheda (galleria). Usa il formato di richiesta
+  /// storico, compatibile anche con un proxy non aggiornato.
   Future<EsitoAi<List<Scheda>>> analizzaFotoScheda(XFile foto) async {
     try {
       final imageBytes = await foto.readAsBytes();
+      return _analizza({'imageBase64': base64Encode(imageBytes)});
+    } catch (e) {
+      debugPrint('Errore AI Foto: $e');
+      return const EsitoAi.errore('Errore imprevisto durante la connessione all\'IA.');
+    }
+  }
+
+  /// Legge una scheda da file: immagine, PDF o Word (.docx).
+  Future<EsitoAi<List<Scheda>>> analizzaFile({required String nomeFile, required Uint8List bytes}) async {
+    final estensione = nomeFile.contains('.') ? nomeFile.split('.').last.toLowerCase() : '';
+    if (!estensioniSupportate.contains(estensione)) {
+      return const EsitoAi.errore('Formato non supportato. Usa PDF, foto (jpg, png, heic) o Word (.docx).');
+    }
+    if (bytes.length > maxBytesFile) {
+      return const EsitoAi.errore('Il file supera i 15 MB. Prova a ridurlo o a esportarlo di nuovo.');
+    }
+
+    if (estensione == 'docx') {
+      final String testo;
+      try {
+        testo = estraiTestoDocx(bytes);
+      } on FormatException {
+        return const EsitoAi.errore('Non riesco ad aprire il file Word. Prova a salvarlo di nuovo come .docx.');
+      }
+      if (testo.trim().isEmpty) {
+        return const EsitoAi.errore('Il file Word non contiene testo leggibile.');
+      }
+      return _analizza({'testo': testo});
+    }
+    return _analizza({'fileBase64': base64Encode(bytes), 'mimeType': _mimePerEstensione[estensione]});
+  }
+
+  Future<EsitoAi<List<Scheda>>> _analizza(Map<String, dynamic> documento) async {
+    try {
       final nomi = await _nomiUfficiali();
-      final risultato = await _proxy.post('analyzeWorkoutPhoto', {
-        'imageBase64': base64Encode(imageBytes),
-        'nomiUfficiali': nomi,
-      });
+      final risultato = await _proxy.post('analyzeWorkoutPhoto', {...documento, 'nomiUfficiali': nomi});
 
       final items = risultato['items'];
       if (items is! List || items.isEmpty) {
-        return const EsitoAi.errore('Nessuna scheda riconosciuta. Prova con una foto più nitida.');
+        return const EsitoAi.errore('Nessuna scheda riconosciuta. Prova con un file più leggibile.');
       }
 
       _normalizzaEserciziJson(items, nomi);
@@ -490,10 +552,10 @@ class AiService {
       final compatibili = applicaPrFallback(_normalizzaSchemaSchede(items), prs);
       return EsitoAi.ok(compatibili.map((e) => Scheda.fromJson(e)).toList());
     } on AiProxyException catch (e) {
-      debugPrint('Errore AI Foto: $e');
+      debugPrint('Errore AI import: $e');
       return EsitoAi.errore(_messaggioErrore(e));
     } catch (e) {
-      debugPrint('Errore AI Foto: $e');
+      debugPrint('Errore AI import: $e');
       return const EsitoAi.errore('Errore imprevisto durante la connessione all\'IA.');
     }
   }
