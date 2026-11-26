@@ -258,6 +258,24 @@ void main() {
     );
   });
 
+  test('HttpProxyAi: attesa di default 120 secondi, oltre diventa 408', () async {
+    expect(HttpProxyAi(baseUrl: 'https://x.dev').timeout, const Duration(seconds: 120));
+    final lento = MockClient((_) async {
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      return http.Response('{}', 200);
+    });
+    final proxy = HttpProxyAi(
+      baseUrl: 'https://x.dev',
+      client: lento,
+      idToken: () async => 't',
+      timeout: const Duration(milliseconds: 50),
+    );
+    await expectLater(
+      proxy.post('analyzeWorkoutPhoto', {}),
+      throwsA(isA<AiProxyException>().having((e) => e.statusCode, 'status', 408)),
+    );
+  });
+
   test('HttpProxyAi.urlCandidati', () {
     expect(HttpProxyAi(baseUrl: 'https://x.dev/').urlCandidati('a').map((u) => '$u'), ['https://x.dev/a']);
     expect(

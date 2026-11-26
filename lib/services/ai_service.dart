@@ -48,8 +48,13 @@ abstract interface class ProxyAi {
 }
 
 class HttpProxyAi implements ProxyAi {
-  HttpProxyAi({String? baseUrl, http.Client? client, FirebaseAuth? auth, Future<String?> Function()? idToken})
-      : _baseUrl = baseUrl ?? const String.fromEnvironment('AI_PROXY_BASE_URL', defaultValue: ''),
+  HttpProxyAi({
+    String? baseUrl,
+    http.Client? client,
+    FirebaseAuth? auth,
+    Future<String?> Function()? idToken,
+    this.timeout = const Duration(seconds: 120),
+  })  : _baseUrl = baseUrl ?? const String.fromEnvironment('AI_PROXY_BASE_URL', defaultValue: ''),
         _client = client,
         _auth = auth,
         _idToken = idToken;
@@ -58,6 +63,10 @@ class HttpProxyAi implements ProxyAi {
   final http.Client? _client;
   final FirebaseAuth? _auth;
   final Future<String?> Function()? _idToken;
+
+  /// Attesa massima per una risposta: leggere un PDF di più settimane può
+  /// richiedere più di un minuto.
+  final Duration timeout;
 
   /// Token Firebase dell'utente; `null` se non è loggato.
   Future<String?> _token() async {
@@ -101,7 +110,7 @@ class HttpProxyAi implements ProxyAi {
         final response = await (client == null
                 ? http.post(uri, headers: headers, body: body)
                 : client.post(uri, headers: headers, body: body))
-            .timeout(const Duration(seconds: 45));
+            .timeout(timeout);
 
         if (response.statusCode >= 200 && response.statusCode < 300) {
           final decoded = jsonDecode(response.body);
