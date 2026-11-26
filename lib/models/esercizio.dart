@@ -1,3 +1,4 @@
+import 'regola_progressione.dart';
 import 'serie.dart';
 import '../services/workload_calculator.dart';
 
@@ -15,6 +16,7 @@ class Esercizio {
   double? massimaleKg;
   double? caricoTargetKg;
   List<Serie> serieAttive;
+  RegolaProgressione? progressione;
 
   Esercizio({
     required this.nome,
@@ -30,6 +32,7 @@ class Esercizio {
     this.massimaleKg,
     this.caricoTargetKg,
     List<Serie>? serieAttive,
+    this.progressione,
   }) : serieAttive = serieAttive ?? [];
 
   Map<String, dynamic> toJson() {
@@ -47,6 +50,7 @@ class Esercizio {
       'massimaleKg': massimaleKg,
       'caricoTargetKg': caricoTargetKg,
       'serieAttive': serieAttive.map((s) => s.toJson()).toList(),
+      if (progressione != null) 'progressione': progressione!.toJson(),
     };
   }
 
@@ -108,6 +112,7 @@ class Esercizio {
       massimaleKg: massimale,
       caricoTargetKg: caricoCalcolato,
       serieAttive: serieFinali,
+      progressione: RegolaProgressione.fromJson(json['progressione']),
     );
   }
 

@@ -7,6 +7,10 @@ class Scheda {
   bool continuativa;
   int settimanaCorrente;
   List<Esercizio> esercizi;
+
+  /// Settimane scritte nel piano del coach (settimana -> esercizi).
+  /// `null` per le schede create a mano.
+  Map<int, List<Esercizio>>? programma;
   static int _idCounter = 0;
   String id;
 
@@ -18,6 +22,7 @@ class Scheda {
     this.continuativa = true,
     this.settimanaCorrente = 1,
     required this.esercizi,
+    this.programma,
   }) : id = (id == null || id.trim().isEmpty)
             ? _newId('$nome|$livello|$categoria')
             : id;
@@ -66,6 +71,8 @@ class Scheda {
       'continuativa': continuativa,
       'settimanaCorrente': settimanaCorrente,
       'esercizi': esercizi.map((e) => e.toJson()).toList(),
+      if (programma != null)
+        'programma': programma!.map((k, v) => MapEntry('$k', v.map((e) => e.toJson()).toList())),
     };
   }
 
@@ -84,6 +91,22 @@ class Scheda {
       continuativa: json['continuativa'] ?? true,
       settimanaCorrente: isLegacyWithoutId ? 1 : (json['settimanaCorrente'] ?? 1),
       esercizi: (json['esercizi'] as List?)?.map((e) => Esercizio.fromJson(e)).toList() ?? [],
+      programma: _programmaDaJson(json['programma']),
     );
+  }
+
+  static Map<int, List<Esercizio>>? _programmaDaJson(dynamic raw) {
+    if (raw is! Map) return null;
+    final out = <int, List<Esercizio>>{};
+    for (final entry in raw.entries) {
+      final settimana = int.tryParse(entry.key.toString().trim());
+      final lista = entry.value;
+      if (settimana == null || settimana < 1 || lista is! List) continue;
+      out[settimana] = lista
+          .whereType<Map>()
+          .map((e) => Esercizio.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    }
+    return out;
   }
 }
