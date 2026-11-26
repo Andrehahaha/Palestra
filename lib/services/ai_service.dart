@@ -48,14 +48,22 @@ abstract interface class ProxyAi {
 }
 
 class HttpProxyAi implements ProxyAi {
-  HttpProxyAi({String? baseUrl, http.Client? client, FirebaseAuth? auth})
+  HttpProxyAi({String? baseUrl, http.Client? client, FirebaseAuth? auth, Future<String?> Function()? idToken})
       : _baseUrl = baseUrl ?? const String.fromEnvironment('AI_PROXY_BASE_URL', defaultValue: ''),
         _client = client,
-        _auth = auth;
+        _auth = auth,
+        _idToken = idToken;
 
   final String _baseUrl;
   final http.Client? _client;
   final FirebaseAuth? _auth;
+  final Future<String?> Function()? _idToken;
+
+  /// Token Firebase dell'utente; `null` se non è loggato.
+  Future<String?> _token() async {
+    if (_idToken != null) return _idToken();
+    return (_auth ?? FirebaseAuth.instance).currentUser?.getIdToken();
+  }
 
   @override
   String get descrizione => _baseUrl.isEmpty ? '(vuoto)' : _baseUrl;
@@ -78,14 +86,12 @@ class HttpProxyAi implements ProxyAi {
     if (_baseUrl.isEmpty) {
       throw const AiProxyException('AI proxy non configurato. Imposta AI_PROXY_BASE_URL.');
     }
-    final user = (_auth ?? FirebaseAuth.instance).currentUser;
-    if (user == null) {
-      throw const AiProxyException('Utente non autenticato.', statusCode: 401);
-    }
-
     try {
       // Il token in cache viene rinnovato da Firebase quando sta per scadere.
-      final idToken = await user.getIdToken();
+      final idToken = await _token();
+      if (idToken == null) {
+        throw const AiProxyException('Utente non autenticato.', statusCode: 401);
+      }
       final headers = {'Content-Type': 'application/json', 'Authorization': 'Bearer $idToken'};
       final body = jsonEncode(payload);
       final client = _client;
@@ -109,7 +115,10 @@ class HttpProxyAi implements ProxyAi {
         var backendError = response.body;
         try {
           final b = jsonDecode(response.body);
-          if (b is Map && b['error'] != null) backendError = b['error'].toString();
+          if (b is Map && b['error'] != null) {
+            // Il proxy mette in `details` il motivo restituito da Gemini.
+            backendError = [b['error'], b['details']].where((x) => x != null && '$x'.isNotEmpty).join(': ');
+          }
         } catch (_) {}
         throw AiProxyException(
           'Proxy AI errore ${response.statusCode}',

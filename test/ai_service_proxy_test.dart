@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:palestra/models/scheda.dart';
 import 'package:palestra/services/ai_service.dart';
@@ -240,6 +242,20 @@ void main() {
       final uno = await importa({'nome': 'GG1', 'esercizi': [es('Squat')], 'programma': {'2': [es('Squat')]}, 'cicloSettimane': 1});
       expect(uno.cicloSettimane, isNull);
     });
+  });
+
+  test('HttpProxyAi: un errore del proxy porta anche il motivo di Gemini', () async {
+    final client = MockClient((_) async => http.Response(
+          jsonEncode({'error': 'Gemini error 400', 'details': '{"error":{"message":"Unsupported MIME type"}}'}),
+          400,
+        ));
+    final proxy = HttpProxyAi(baseUrl: 'https://x.dev', client: client, idToken: () async => 't');
+    await expectLater(
+      proxy.post('analyzeWorkoutPhoto', {}),
+      throwsA(isA<AiProxyException>()
+          .having((e) => e.statusCode, 'status', 400)
+          .having((e) => e.details, 'details', allOf(contains('Gemini error 400'), contains('Unsupported MIME type')))),
+    );
   });
 
   test('HttpProxyAi.urlCandidati', () {
