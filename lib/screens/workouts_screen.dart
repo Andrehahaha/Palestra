@@ -14,6 +14,7 @@ import '../services/archivio_atleta.dart';
 import '../services/carichi.dart';
 import '../services/pdf_schede.dart';
 import 'dettaglio_scheda_screen.dart';
+import 'import_da_file.dart';
 import 'storico_screen.dart';
 import 'crea_scheda.dart';
 import 'crea_esercizio.dart';
@@ -578,6 +579,24 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
             } else {
               ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(esito.errore ?? 'Errore durante la scansione. Riprova! ❌')));
             }
+          }
+        },
+      ),
+      IconButton(
+        icon: const Icon(Icons.upload_file, color: Colors.blueAccent),
+        tooltip: 'Importa da file (PDF, foto, Word)',
+        onPressed: () async {
+          final esito = await importaSchedaDaFile(context);
+          if (esito == null || !context.mounted || !mounted) return;
+          final schedeImportate = esito.valore;
+          if (schedeImportate != null) {
+            _updateState(() {
+              mieSchede.addAll(schedeImportate);
+            });
+            _salvaDati();
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${schedeImportate.length} schede importate!')));
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(esito.errore!)));
           }
         },
       ),

@@ -44,6 +44,8 @@ class _CreaSchedaScreenState extends State<CreaSchedaScreen> {
     );
 
     if (risultato != null && risultato is Esercizio) {
+      // La schermata esercizio non conosce la regola del piano: la conservo.
+      risultato.progressione ??= esercizio?.progressione;
       setState(() {
         if (index != null) {
           _eserciziAggiunti[index] = risultato; // Modifica esistente
@@ -141,7 +143,11 @@ class _CreaSchedaScreenState extends State<CreaSchedaScreen> {
               ),
               onPressed: () {
                 if (_nomeController.text.isNotEmpty) {
+                  final originale = widget.schedaDaModificare;
                   final nuovaScheda = Scheda(
+                    // Id e piano del coach restano quelli della scheda modificata.
+                    id: originale?.id,
+                    programma: originale?.programma,
                     nome: _nomeController.text,
                     livello: _livelloSelezionato,
                     categoria: _categoriaController.text.isEmpty ? 'Generale' : _categoriaController.text,

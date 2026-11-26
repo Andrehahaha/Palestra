@@ -1,0 +1,58 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:palestra/models/esercizio.dart';
+import 'package:palestra/models/regola_progressione.dart';
+import 'package:palestra/models/scheda.dart';
+import 'package:palestra/screens/crea_scheda.dart';
+
+void main() {
+  testWidgets('salvare una scheda importata non perde id, piano e regole', (tester) async {
+    final originale = Scheda(
+      id: 'sch_import_1',
+      nome: 'GG1',
+      livello: 'Principiante',
+      categoria: 'Forza 12 settimane',
+      esercizi: [
+        Esercizio(
+          nome: 'Panca Piana',
+          avvicinamento: 0,
+          workingSet: 3,
+          ripetizioni: '8',
+          recupero: '120',
+          progressione: const RegolaProgressione(daSettimana: 2, incrementoKg: 2.5, nota: '+2,5 kg'),
+        ),
+      ],
+      programma: {
+        4: [Esercizio(nome: 'Panca Piana', avvicinamento: 0, workingSet: 6, ripetizioni: '6', recupero: '120')],
+      },
+    );
+
+    Scheda? salvata;
+    await tester.pumpWidget(MaterialApp(
+      home: Builder(
+        builder: (context) => Scaffold(
+          body: TextButton(
+            onPressed: () async {
+              salvata = await Navigator.push<Scheda>(
+                context,
+                MaterialPageRoute(builder: (_) => CreaSchedaScreen(schedaDaModificare: originale)),
+              );
+            },
+            child: const Text('apri'),
+          ),
+        ),
+      ),
+    ));
+    await tester.tap(find.text('apri'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('SALVA SCHEDA'));
+    await tester.pumpAndSettle();
+
+    expect(salvata, isNotNull);
+    expect(salvata!.id, 'sch_import_1');
+    expect(salvata!.programma!.keys, [4]);
+    expect(salvata!.programma![4]!.single.workingSet, 6);
+    expect(salvata!.esercizi.single.progressione!.incrementoKg, 2.5);
+  });
+}

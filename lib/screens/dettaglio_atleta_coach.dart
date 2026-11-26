@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import '../models/scheda.dart';
 import '../services/ai_service.dart';
 import 'crea_scheda.dart';
+import 'import_da_file.dart';
 import 'seleziona_scheda_libreria.dart'; // <-- NUOVO IMPORT
 
 class DettaglioAtletaCoachScreen extends StatelessWidget {
@@ -84,12 +85,36 @@ class DettaglioAtletaCoachScreen extends StatelessWidget {
     Navigator.pop(context); 
 
     if (schedeImportate != null) {
-      // 👇 QUI IL FIX: Usiamo schedaDaModificare!
-      final Scheda? schedaRivista = await Navigator.push(context, MaterialPageRoute(builder: (context) => CreaSchedaScreen(schedaDaModificare: schedeImportate.first)));
-      if (schedaRivista != null && context.mounted) _confermaEInvia(context, [schedaRivista]);
+      await _rivediEInvia(context, schedeImportate);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(esito.errore ?? 'Errore o foto poco chiara. Riprova! ❌'), backgroundColor: Colors.red));
     }
+  }
+
+  // 4. FLUSSO: Da file (PDF, foto, Word)
+  Future<void> _importaDaFile(BuildContext context) async {
+    final esito = await importaSchedaDaFile(context);
+    if (esito == null || !context.mounted) return;
+    final schede = esito.valore;
+    if (schede == null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(esito.errore!), backgroundColor: Colors.red));
+      return;
+    }
+    await _rivediEInvia(context, schede);
+  }
+
+  /// Un giorno solo: si rivede direttamente. Più giorni: lista e invio di tutti.
+  Future<void> _rivediEInvia(BuildContext context, List<Scheda> schede) async {
+    if (schede.length == 1) {
+      final Scheda? rivista = await Navigator.push(context, MaterialPageRoute(builder: (context) => CreaSchedaScreen(schedaDaModificare: schede.single)));
+      if (rivista != null && context.mounted) _confermaEInvia(context, [rivista]);
+      return;
+    }
+    final List<Scheda>? daInviare = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => RevisioneSchedeImportateScreen(schede: schede)),
+    );
+    if (daInviare != null && daInviare.isNotEmpty && context.mounted) _confermaEInvia(context, daInviare);
   }
 
   // Funzione finale che spara i dati su Firebase
@@ -125,6 +150,7 @@ class DettaglioAtletaCoachScreen extends StatelessWidget {
         title: Text('Atleta: $atletaEmail', style: const TextStyle(fontSize: 16)),
         actions: [
           IconButton(icon: const Icon(Icons.document_scanner, color: Colors.purpleAccent), tooltip: 'Scansiona Scheda con IA', onPressed: () => _importaConAI(context)),
+          IconButton(icon: const Icon(Icons.upload_file, color: Colors.purpleAccent), tooltip: 'Importa da file (PDF, foto, Word)', onPressed: () => _importaDaFile(context)),
         ],
       ),
       body: StreamBuilder<QuerySnapshot>(
