@@ -35,6 +35,18 @@ class _CreaSchedaScreenState extends State<CreaSchedaScreen> {
     }
   }
 
+  /// Se modifico la settimana 1 di una scheda col piano, la W1 del piano
+  /// deve seguire (il ciclo la riprende da lì). Copie, non la stessa lista.
+  Map<int, List<Esercizio>>? _programmaAggiornato(Scheda? originale) {
+    final programma = originale?.programma;
+    if (programma == null) return null;
+    if (_settimanaCorrente != 1 || !programma.containsKey(1)) return programma;
+    return {
+      ...programma,
+      1: _eserciziAggiunti.map((e) => Esercizio.fromJson(e.toJson())).toList(),
+    };
+  }
+
   void _gestisciEsercizio({Esercizio? esercizio, int? index}) async {
     final risultato = await Navigator.push(
       context,
@@ -147,7 +159,8 @@ class _CreaSchedaScreenState extends State<CreaSchedaScreen> {
                   final nuovaScheda = Scheda(
                     // Id e piano del coach restano quelli della scheda modificata.
                     id: originale?.id,
-                    programma: originale?.programma,
+                    programma: _programmaAggiornato(originale),
+                    cicloSettimane: originale?.cicloSettimane,
                     nome: _nomeController.text,
                     livello: _livelloSelezionato,
                     categoria: _categoriaController.text.isEmpty ? 'Generale' : _categoriaController.text,

@@ -149,7 +149,7 @@ void main() {
       final esito = await _service(FakeProxy(risposta: risposta))
           .analizzaFile(nomeFile: 'a.jpg', bytes: Uint8List.fromList([1]));
       final scheda = esito.valore!.single;
-      expect(scheda.programma!.keys, [4]);
+      expect(scheda.programma!.keys.toSet(), {1, 4});
       expect(scheda.programma![4]!.single.nome, 'Panca Piana');
       expect(scheda.programma![4]!.single.workingSet, 6);
       final regola = scheda.esercizi.single.progressione!;
@@ -157,14 +157,14 @@ void main() {
       expect(regola.nota, '+2,5 kg a settimana');
     });
 
-    test('proxy vecchio senza programma: programma vuoto, non null', () async {
+    test('proxy vecchio senza programma: piano con la sola W1', () async {
       final esito = await _service(FakeProxy(risposta: {
         'items': [
           {'nome': 'GG1', 'esercizi': [{'nome': 'Squat'}]},
         ],
       })).analizzaFile(nomeFile: 'a.png', bytes: Uint8List.fromList([1]));
-      expect(esito.valore!.single.programma, isEmpty);
-      expect(esito.valore!.single.programma, isNotNull);
+      expect(esito.valore!.single.programma!.keys, [1]);
+      expect(esito.valore!.single.cicloSettimane, isNull);
     });
 
     test('file oltre 15 MB: errore, nessuna chiamata', () async {
@@ -189,6 +189,56 @@ void main() {
       final esito = await _service(proxy).analizzaFile(nomeFile: 'piano.xlsx', bytes: Uint8List.fromList([1]));
       expect(esito.errore, contains('Formato non supportato'));
       expect(proxy.chiamate, isEmpty);
+    });
+  });
+
+  group('controllo settimane all\'import', () {
+    Future<Scheda> importa(Map<String, dynamic> giorno) async {
+      final esito = await _service(FakeProxy(risposta: {'items': [giorno]}))
+          .analizzaFile(nomeFile: 'a.pdf', bytes: Uint8List.fromList([1]));
+      return esito.valore!.single;
+    }
+
+    Map<String, dynamic> es(String nome) => {'nome': nome, 'workingSet': 3};
+
+    test('etichette testuali diventano numeri', () async {
+      final s = await importa({
+        'nome': 'GG1',
+        'esercizi': [es('Squat')],
+        'programma': {'Settimana 2': [es('Panca Piana')], 'W3': [es('Squat')], 'boh': [es('Squat')]},
+      });
+      expect(s.programma!.keys.toSet(), {1, 2, 3});
+    });
+
+    test('la W1 viene salvata anche nel piano', () async {
+      final s = await importa({'nome': 'GG1', 'esercizi': [es('Squat')], 'programma': {'2': [es('Panca Piana')]}});
+      expect(s.programma![1]!.single.nome, 'Squat');
+    });
+
+    test('senza W1 la prima settimana presente diventa la W1 e le altre scalano', () async {
+      final s = await importa({
+        'nome': 'GG1',
+        'esercizi': [],
+        'programma': {'3': [es('Squat')], '4': [es('Panca Piana')]},
+      });
+      expect(s.esercizi.single.nome, 'Squat');
+      expect(s.programma!.keys.toSet(), {1, 2});
+      expect(s.programma![2]!.single.nome, 'Panca Piana');
+    });
+
+    test('ciclo valido tenuto, ciclo non valido scartato', () async {
+      final ab = await importa({
+        'nome': 'GG1',
+        'esercizi': [es('Squat')],
+        'programma': {'2': [es('Panca Piana')]},
+        'cicloSettimane': 2,
+      });
+      expect(ab.cicloSettimane, 2);
+
+      final troppoLungo = await importa({'nome': 'GG1', 'esercizi': [es('Squat')], 'cicloSettimane': 4});
+      expect(troppoLungo.cicloSettimane, isNull);
+      final uno = await importa({'nome': 'GG1', 'esercizi': [es('Squat')], 'programma': {'2': [es('Squat')]}, 'cicloSettimane': 1});
+      expect(uno.cicloSettimane, isNull);
     });
   });
 

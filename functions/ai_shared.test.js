@@ -106,3 +106,11 @@ test('analyze: il prompt chiede programma e progressione senza inventare', () =>
   assert.match(p, /"progressione"/);
   assert.match(p, /non inventare/i);
 });
+
+test('analyze: il prompt chiede settimane numerate e il ciclo A/B', () => {
+  const p = ai.buildAnalyzePrompt([]);
+  assert.match(p, /"cicloSettimane"/);
+  assert.match(p, /1, 2, 3/);
+  assert.match(p, /alternan/i);
+  assert.doesNotMatch(p, /"4": \[/);
+});

@@ -67,6 +67,44 @@ void main() {
     expect(ProgrammaSettimane.decidi(s, 2, haSnapshotAtleta: false), isA<FlussoManuale>());
   });
 
+  group('ciclo A/B', () {
+    Scheda alternata() => Scheda(
+          nome: 'GG1',
+          livello: 'Base',
+          id: 'ab',
+          esercizi: [_es('Squat', 3)],
+          programma: {
+            1: [_es('Squat', 3)],
+            2: [_es('Stacco da Terra', 4)],
+          },
+          cicloSettimane: 2,
+        );
+
+    test('W3 riprende la W1, W4 la W2', () {
+      final w3 = ProgrammaSettimane.decidi(alternata(), 3, haSnapshotAtleta: false) as UsaProgramma;
+      expect(w3.esercizi.single.nome, 'Squat');
+      final w4 = ProgrammaSettimane.decidi(alternata(), 4, haSnapshotAtleta: false) as UsaProgramma;
+      expect(w4.esercizi.single.nome, 'Stacco da Terra');
+      final w7 = ProgrammaSettimane.decidi(alternata(), 7, haSnapshotAtleta: false) as UsaProgramma;
+      expect(w7.esercizi.single.nome, 'Squat');
+    });
+
+    test('una settimana scritta esplicitamente vince sul ciclo', () {
+      final s = alternata();
+      s.programma![3] = [_es('Panca Piana', 5)];
+      final w3 = ProgrammaSettimane.decidi(s, 3, haSnapshotAtleta: false) as UsaProgramma;
+      expect(w3.esercizi.single.nome, 'Panca Piana');
+    });
+
+    test('ciclo di 3 settimane', () {
+      final s = alternata()
+        ..cicloSettimane = 3
+        ..programma![3] = [_es('Panca Piana', 5)];
+      expect((ProgrammaSettimane.decidi(s, 6, haSnapshotAtleta: false) as UsaProgramma).esercizi.single.nome, 'Panca Piana');
+      expect((ProgrammaSettimane.decidi(s, 5, haSnapshotAtleta: false) as UsaProgramma).esercizi.single.nome, 'Stacco da Terra');
+    });
+  });
+
   test('copiaSettimana azzera le serie e cambia settimana, pesi invariati', () {
     final s = _programmata();
     ProgrammaSettimane.copiaSettimana(s, 5);

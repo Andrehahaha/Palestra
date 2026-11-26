@@ -372,12 +372,13 @@ class AiService {
           final rawId = scheda['id']?.toString();
           final hasStableId = rawId != null && rawId.trim().isNotEmpty;
 
-          final esercizi = _normalizzaListaEsercizi(scheda['esercizi']);
-          final programmaRaw = scheda['programma'];
-          final programma = <String, dynamic>{
-            if (programmaRaw is Map)
-              for (final e in programmaRaw.entries) e.key.toString(): _normalizzaListaEsercizi(e.value),
-          };
+          final piano = _pianoSettimane(
+            _normalizzaListaEsercizi(scheda['esercizi']),
+            scheda['programma'],
+            scheda['cicloSettimane'],
+          );
+          final esercizi = piano.esercizi;
+          final programma = {for (final e in piano.settimane.entries) '${e.key}': e.value};
 
           return {
             'id': hasStableId ? rawId : null,
@@ -388,9 +389,41 @@ class AiService {
             'settimanaCorrente': hasStableId ? _toIntOrDefault(scheda['settimanaCorrente'], 1) : 1,
             'esercizi': esercizi,
             'programma': programma,
+            'cicloSettimane': piano.ciclo,
           };
         })
         .toList();
+  }
+
+  /// Controllo delle settimane lette dall'AI: chiavi ridotte al numero
+  /// ("Settimana 2", "W2" -> 2), W1 garantita (se manca, la prima settimana
+  /// presente diventa la W1 e le altre scalano), W1 salvata anche nel piano,
+  /// ciclo tenuto solo se coerente.
+  static ({List<Map<String, dynamic>> esercizi, Map<int, List<Map<String, dynamic>>> settimane, int? ciclo})
+      _pianoSettimane(List<Map<String, dynamic>> base, dynamic programmaRaw, dynamic cicloRaw) {
+    var settimane = <int, List<Map<String, dynamic>>>{};
+    if (programmaRaw is Map) {
+      for (final e in programmaRaw.entries) {
+        final numero = int.tryParse(RegExp(r'\d+').firstMatch(e.key.toString())?.group(0) ?? '');
+        if (numero == null || numero < 1) continue;
+        final lista = _normalizzaListaEsercizi(e.value);
+        if (lista.isNotEmpty) settimane[numero] = lista;
+      }
+    }
+
+    var esercizi = base;
+    if (esercizi.isEmpty && settimane.isNotEmpty) {
+      final prima = settimane.keys.reduce((a, b) => a < b ? a : b);
+      settimane = {for (final e in settimane.entries) e.key - prima + 1: e.value};
+      esercizi = settimane[1]!;
+    }
+    if (esercizi.isNotEmpty) settimane[1] = esercizi;
+
+    final ciclo = cicloRaw is num ? cicloRaw.toInt() : int.tryParse('${cicloRaw ?? ''}');
+    final ultima = settimane.isEmpty ? 0 : settimane.keys.reduce((a, b) => a > b ? a : b);
+    final cicloValido = ciclo != null && ciclo >= 2 && ciclo <= ultima ? ciclo : null;
+
+    return (esercizi: esercizi, settimane: settimane, ciclo: cicloValido);
   }
 
   static List<Map<String, dynamic>> _normalizzaListaEsercizi(dynamic raw) {

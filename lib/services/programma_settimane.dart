@@ -49,6 +49,12 @@ abstract final class ProgrammaSettimane {
       return UsaProgramma(scritta.map(_copiaAzzerata).toList());
     }
 
+    final ciclo = scheda.cicloSettimane;
+    if (ciclo != null && ciclo >= 2) {
+      final nelCiclo = programma[(destinazione - 1) % ciclo + 1];
+      if (nelCiclo != null) return UsaProgramma(nelCiclo.map(_copiaAzzerata).toList());
+    }
+
     final regole = <int, RegolaProgressione>{};
     for (var i = 0; i < scheda.esercizi.length; i++) {
       final r = scheda.esercizi[i].progressione;

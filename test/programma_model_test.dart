@@ -67,6 +67,12 @@ void main() {
       expect(copia.esercizi.single.progressione!.nota, '+2,5 kg');
     });
 
+    test('cicloSettimane nel round trip', () {
+      final s = Scheda(nome: 'GG1', livello: 'Base', id: 'c', esercizi: [], programma: {}, cicloSettimane: 2);
+      expect(Scheda.fromJson(s.toJson()).cicloSettimane, 2);
+      expect(Scheda.fromJson({'id': 'd', 'nome': 'X', 'esercizi': []}).cicloSettimane, isNull);
+    });
+
     test('scheda fatta a mano: programma null', () {
       final s = Scheda.fromJson({'id': 'b', 'nome': 'X', 'esercizi': []});
       expect(s.programma, isNull);

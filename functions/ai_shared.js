@@ -104,12 +104,17 @@ REGOLE SPECIFICHE BIG 3 (OBBLIGATORIO):
 - Se nello stesso testo trovi anche il massimale (es. 1RM 120kg), compila anche "massimaleKg".
 
 PROGRAMMAZIONE SU PIÙ SETTIMANE:
-- Spesso lo stesso giorno cambia nel tempo (es. GG1 settimana 1: panca 3 serie; settimana 4: 6 serie; settimana 10: 3 serie con Stripping).
+- Spesso lo stesso giorno cambia nel tempo; il ciclo può durare 2, 3, 4 o più settimane.
 - Restituisci UN oggetto per giorno (non uno per settimana).
-- In "esercizi" metti la prima settimana scritta.
-- In "programma" metti SOLO le altre settimane scritte esplicitamente nel documento, con la lista completa degli esercizi di quella settimana: chiave = numero della settimana come stringa.
-- Se un intervallo dice "settimane 1-3" e poi cambia alla 4, metti solo la settimana 4 in "programma": le settimane non scritte ripetono la precedente.
+- Numera SEMPRE le settimane 1, 2, 3, ... dall'inizio del programma, qualunque sia l'etichetta nel documento ("Sett. 2", "W2", "Microciclo 2", "Week 2" diventano 2).
+- In "esercizi" metti la settimana 1.
+- In "programma" metti SOLO le settimane scritte esplicitamente nel documento e diverse dalla precedente, con la lista completa degli esercizi: chiave = numero della settimana come stringa ("2", "3", ...).
+- Se un intervallo dice "settimane 1-3" e poi cambia dalla successiva, metti solo la settimana in cui cambia: quelle non scritte ripetono la precedente.
 - Se c'è una sola settimana, "programma" è {}.
+
+SCHEDE CHE SI ALTERNANO:
+- Se il documento dice che due o più schede si alternano a settimane (es. "scheda A e scheda B alternate"), restituiscile come UN solo giorno: settimana 1 = A in "esercizi", settimana 2 = B in "programma", e così via.
+- In quel caso aggiungi "cicloSettimane": numero di schede che si alternano (es. 2 per A/B). Altrimenti "cicloSettimane": null.
 
 REGOLE DI PROGRESSIONE:
 - Se il documento indica come progredire (es. "+2,5 kg a settimana", "+5% ogni settimana", "RIR 2 dalla settimana 3"), aggiungi all'esercizio "progressione": {"daSettimana": n, "aSettimana": n o null, "incrementoKg": numero o null, "incrementoPercentuale": numero o null, "rirTarget": stringa o null, "nota": "testo originale della regola"}.
@@ -145,8 +150,9 @@ STRUTTURA JSON:
       }
     ],
     "programma": {
-      "4": [ { "nome": "...", "workingSet": 6, "ripetizioni": "6", "tecniche": ["Classico"] } ]
-    }
+      "2": [ { "nome": "...", "workingSet": 4, "ripetizioni": "6", "tecniche": ["Classico"] } ]
+    },
+    "cicloSettimane": null
   }
 ]
 

@@ -55,4 +55,43 @@ void main() {
     expect(salvata!.programma![4]!.single.workingSet, 6);
     expect(salvata!.esercizi.single.progressione!.incrementoKg, 2.5);
   });
+
+  testWidgets('modificare la settimana 1 aggiorna la W1 del piano', (tester) async {
+    final originale = Scheda(
+      id: 'ab',
+      nome: 'GG1',
+      livello: 'Principiante',
+      esercizi: [Esercizio(nome: 'Squat', avvicinamento: 0, workingSet: 3, ripetizioni: '5', recupero: '180')],
+      programma: {
+        1: [Esercizio(nome: 'Squat', avvicinamento: 0, workingSet: 99, ripetizioni: '5', recupero: '180')],
+        2: [Esercizio(nome: 'Stacco da Terra', avvicinamento: 0, workingSet: 4, ripetizioni: '4', recupero: '180')],
+      },
+      cicloSettimane: 2,
+    );
+
+    Scheda? salvata;
+    await tester.pumpWidget(MaterialApp(
+      home: Builder(
+        builder: (context) => TextButton(
+          onPressed: () async {
+            salvata = await Navigator.push<Scheda>(
+              context,
+              MaterialPageRoute(builder: (_) => CreaSchedaScreen(schedaDaModificare: originale)),
+            );
+          },
+          child: const Text('apri'),
+        ),
+      ),
+    ));
+    await tester.tap(find.text('apri'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).first, 'GG1 rivisto');
+    await tester.tap(find.text('SALVA SCHEDA'));
+    await tester.pumpAndSettle();
+
+    expect(salvata!.programma![1]!.single.workingSet, 3);
+    expect(identical(salvata!.programma![1]!.single, salvata!.esercizi.single), isFalse);
+    expect(salvata!.programma![2]!.single.nome, 'Stacco da Terra');
+    expect(salvata!.cicloSettimane, 2);
+  });
 }
