@@ -133,3 +133,10 @@ test('callGemini: "JSON mode is not enabled for api version" passa all endpoint 
   assert.equal(res.body.text, 'ok');
   assert.equal(calls.length, 2);
 });
+
+test('analyze: ragionamento di Gemini spento (estrazione, deve essere veloce)', async () => {
+  const { fetchImpl, calls } = fakeFetch([{ status: 200, text: gemini('[]') }]);
+  await ai.analyzeWorkoutPhoto('k', { fileBase64: 'x', mimeType: 'application/pdf', nomiUfficiali: [] }, { fetchImpl });
+  assert.equal(calls[0].body.generationConfig.thinkingConfig.thinkingBudget, 0);
+  assert.equal(calls[0].body.generationConfig.responseMimeType, 'application/json');
+});

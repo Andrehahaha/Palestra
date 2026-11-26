@@ -215,7 +215,11 @@ async function analyzeWorkoutPhoto(apiKey, payload, options) {
         parts: [{ text: buildAnalyzePrompt(nomiUfficiali) }, documento],
       },
     ],
-    generationConfig: { responseMimeType: 'application/json' },
+    generationConfig: {
+      responseMimeType: 'application/json',
+      // Estrazione di dati: il "ragionamento" di 2.5 Flash la rallentava oltre i 2 minuti.
+      thinkingConfig: { thinkingBudget: 0 },
+    },
   }, options);
 
   let items;
