@@ -91,7 +91,9 @@ Estrai i dati e restituisci SOLO un ARRAY JSON valido contenente un oggetto per 
 
 ${sezioneNomi(nomiUfficiali)}
 REGOLE PER LE TECNICHE:
-[Classico, Back off, Drop Set, Super Set, Rest Pause, Piramidale, Giant Set, Cluster Set, Top Set, Feeder Set, Warm Up, Myo-reps, AMRAP, Negative, Isometria, Stripping, Trisets, Pre-stancaggio, EMOM, Burnouts].
+[Classico, Back off, Drop Set, Super Set, Rest Pause, Piramidale, Giant Set, Cluster Set, Top Set, Feeder Set, Warm Up, Myo-reps, AMRAP, Negative, Isometria, Stripping, Trisets, Pre-stancaggio, EMOM, Burnouts, LP].
+"LP" = LP (parziali in allungamento). Indicazioni come "Ultima serie: LP", "Ultima serie: drop set" vanno in "tecniche" dell'esercizio (es. ["LP"]).
+Se una tecnica vale solo in alcuni cicli (es. "LP nel ciclo 1, rest-pause dal ciclo 2"), mettila nelle settimane giuste: quella del ciclo 1 in "esercizi", quella del ciclo 2 nella prima settimana del ciclo 2 in "programma".
 
 REGOLE PER L'RPE:
 Se nella foto per un esercizio è indicato un valore come @8, RPE 8, RIR 2, estrai solo il numero.

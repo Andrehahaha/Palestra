@@ -38,7 +38,7 @@ class _CreaEsercizioScreenState extends State<CreaEsercizioScreen> {
     'Superset', 'Stripping', 'Drop Set', 'Rest Pause', 'Monopodalico', 
     'Piramidale', 'Back off', 'Giant Set', 'Cluster Set', 'Top Set', 
     'Feeder Set', 'Warm Up', 'Myo-reps', 'AMRAP', 'Negative', 
-    'Isometria', 'Trisets', 'Pre-stancaggio', 'EMOM', 'Burnouts'
+    'Isometria', 'Trisets', 'Pre-stancaggio', 'EMOM', 'Burnouts', 'LP'
   ];
 
   @override

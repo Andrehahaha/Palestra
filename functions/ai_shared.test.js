@@ -203,3 +203,9 @@ test('match: payload non valido -> 400', async () => {
   assert.equal(res.status, 400);
   assert.equal(calls.length, 0);
 });
+
+test('analyze: LP (parziali in allungamento) è tra le tecniche', () => {
+  const p = ai.buildAnalyzePrompt([]);
+  assert.match(p, /LP \(parziali in allungamento\)/);
+  assert.match(p, /Ultima serie: LP/);
+});
