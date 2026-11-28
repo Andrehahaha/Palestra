@@ -768,8 +768,11 @@ class AiService {
   /// storico, compatibile anche con un proxy non aggiornato.
   Future<EsitoAi<List<Scheda>>> analizzaFotoScheda(XFile foto) async {
     try {
-      final imageBytes = await foto.readAsBytes();
-      return _analizza({'imageBase64': base64Encode(imageBytes)});
+      final bytes = await foto.readAsBytes();
+      final estensione = foto.name.contains('.') ? foto.name.split('.').last.toLowerCase() : '';
+      // La fotocamera a volte dà nomi senza estensione: è comunque una foto.
+      final nome = estensioniSupportate.contains(estensione) && estensione != 'docx' ? foto.name : 'foto.jpg';
+      return analizzaFile(nomeFile: nome, bytes: bytes);
     } catch (e) {
       debugPrint('Errore AI Foto: $e');
       return const EsitoAi.errore('Errore imprevisto durante la connessione all\'IA.');

@@ -75,8 +75,17 @@ void main() {
 
       final (endpoint, payload) = proxy.chiamate.single;
       expect(endpoint, 'analyzeWorkoutPhoto');
-      expect(payload['imageBase64'], base64Encode([1, 2, 3]));
+      // Stesso percorso dei file: niente più campo imageBase64.
+      expect(payload['fileBase64'], base64Encode([1, 2, 3]));
+      expect(payload['mimeType'], 'image/jpeg');
+      expect(payload.containsKey('imageBase64'), isFalse);
       expect(payload['nomiUfficiali'], isEmpty);
+    });
+
+    test('foto della fotocamera senza estensione: trattata come jpg', () async {
+      final proxy = FakeProxy(risposta: {'items': [{'nome': 'A', 'esercizi': []}]});
+      await _service(proxy).analizzaFotoScheda(XFile.fromData(Uint8List.fromList([1]), name: 'image_picker_42'));
+      expect(proxy.chiamate.single.$2['mimeType'], 'image/jpeg');
     });
 
     test('nessuna scheda riconosciuta è un errore', () async {
