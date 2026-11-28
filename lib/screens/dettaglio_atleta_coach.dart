@@ -105,6 +105,8 @@ class DettaglioAtletaCoachScreen extends StatelessWidget {
 
   /// Un giorno solo: si rivede direttamente. Più giorni: lista e invio di tutti.
   Future<void> _rivediEInvia(BuildContext context, List<Scheda> schede) async {
+    await rivediNomiImportati(context, schede);
+    if (!context.mounted) return;
     if (schede.length == 1) {
       final Scheda? rivista = await Navigator.push(context, MaterialPageRoute(builder: (context) => CreaSchedaScreen(schedaDaModificare: schede.single)));
       if (rivista != null && context.mounted) _confermaEInvia(context, [rivista]);

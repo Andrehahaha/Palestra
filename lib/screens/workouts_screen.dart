@@ -580,6 +580,8 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
             Navigator.pop(context);
             final schedeImportate = esito.valore;
             if (schedeImportate != null) {
+              await rivediNomiImportati(context, schedeImportate);
+              if (!context.mounted || !mounted) return;
               _updateState(() {
                 Cartelle.assegnaCartelleLibere(schedeImportate, esistenti: mieSchede, cartelleVuote: cartelleVuote);
                 mieSchede.addAll(schedeImportate);
@@ -600,6 +602,8 @@ class _WorkoutsScreenState extends State<WorkoutsScreen> {
           if (esito == null || !context.mounted || !mounted) return;
           final schedeImportate = esito.valore;
           if (schedeImportate != null) {
+            await rivediNomiImportati(context, schedeImportate);
+            if (!context.mounted || !mounted) return;
             _updateState(() {
               Cartelle.assegnaCartelleLibere(schedeImportate, esistenti: mieSchede, cartelleVuote: cartelleVuote);
                 mieSchede.addAll(schedeImportate);

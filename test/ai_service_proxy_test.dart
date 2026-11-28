@@ -440,6 +440,23 @@ void main() {
       expect(service.ultimiNomiCambiati, contains(('Spinte con manubri su panca piana', 'Panca piana con manubri')));
     });
 
+    test('una correzione ricordata vale prima di tutto, senza chiedere all AI', () async {
+      final p = FakeProxy(risposta: lettura(['Spinte con manubri su panca piana', 'Pressa 45°']));
+      final service = AiService(
+        proxy: p,
+        caricaPr: () async => {},
+        nomiUfficiali: () async => db,
+        abbinamentiRicordati: () async => {
+          'spinte con manubri su panca piana': 'Panca piana con manubri',
+          'pressa 45°': 'Pressa 45°',
+        },
+      );
+      final esito = await service.analizzaFile(nomeFile: 'a.pdf', bytes: Uint8List.fromList([1]));
+      expect(esito.valore!.single.esercizi.map((e) => e.nome), ['Panca piana con manubri', 'Pressa 45°']);
+      expect(esito.valore!.single.esercizi.first.nomeOriginale, 'Spinte con manubri su panca piana');
+      expect(p.chiamateMatch, isEmpty);
+    });
+
     test('scelta null: resta il nome del documento', () async {
       final p = FakeProxy(
         risposta: lettura(['Croci ai cavi dal basso']),

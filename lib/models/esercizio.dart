@@ -18,6 +18,10 @@ class Esercizio {
   List<Serie> serieAttive;
   RegolaProgressione? progressione;
 
+  /// Nome come scritto nel documento importato (se il nome è stato abbinato
+  /// al database può essere diverso da [nome]). `null` per esercizi fatti a mano.
+  final String? nomeOriginale;
+
   Esercizio({
     required this.nome,
     required this.avvicinamento,
@@ -33,6 +37,7 @@ class Esercizio {
     this.caricoTargetKg,
     List<Serie>? serieAttive,
     this.progressione,
+    this.nomeOriginale,
   }) : serieAttive = serieAttive ?? [];
 
   Map<String, dynamic> toJson() {
@@ -51,6 +56,7 @@ class Esercizio {
       'caricoTargetKg': caricoTargetKg,
       'serieAttive': serieAttive.map((s) => s.toJson()).toList(),
       if (progressione != null) 'progressione': progressione!.toJson(),
+      if (nomeOriginale != null) 'nomeOriginale': nomeOriginale,
     };
   }
 
@@ -113,6 +119,7 @@ class Esercizio {
       caricoTargetKg: caricoCalcolato,
       serieAttive: serieFinali,
       progressione: RegolaProgressione.fromJson(json['progressione']),
+      nomeOriginale: json['nomeOriginale'] as String?,
     );
   }
 

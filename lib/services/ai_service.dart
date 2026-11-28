@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 
 import '../models/scheda.dart';
 import '../models/settimana_piano.dart';
+import '../services/abbinamenti_ricordati.dart';
 import '../services/api_esercizi.dart'; 
 import '../services/dizionario_esercizi.dart';
 import '../services/archivio_atleta.dart';
@@ -160,9 +161,11 @@ class AiService {
     ProxyAi? proxy,
     Future<Map<String, double>> Function()? caricaPr,
     Future<List<String>> Function()? nomiUfficiali,
+    Future<Map<String, String>> Function()? abbinamentiRicordati,
   })  : _proxy = proxy ?? HttpProxyAi(),
         _caricaPr = caricaPr ?? (() => ArchivioAtleta.instance.caricaPr()),
-        _nomiUfficiali = nomiUfficiali ?? _nomiDalDatabase;
+        _nomiUfficiali = nomiUfficiali ?? _nomiDalDatabase,
+        _ricordati = abbinamentiRicordati ?? AbbinamentiRicordati.carica;
 
   static final AiService instance = AiService();
 
@@ -172,6 +175,10 @@ class AiService {
   List<(String, String)> ultimiNomiCambiati = const [];
   final Future<Map<String, double>> Function() _caricaPr;
   final Future<List<String>> Function() _nomiUfficiali;
+  final Future<Map<String, String>> Function() _ricordati;
+
+  /// Nomi degli esercizi del database (con foto e scheda).
+  Future<List<String>> nomiDatabase() => _nomiUfficiali();
 
   static Future<List<String>> _nomiDalDatabase() async {
     final database = await ApiEsercizi.ottieniEserciziTradotti();
@@ -468,10 +475,17 @@ class AiService {
       e['nomeOriginale'] ??= e['nome'];
     }
 
+    final ricordati = await _ricordati();
     final scelti = <String, String>{};
     final daChiedere = <Map<String, dynamic>>[];
     for (final originale in esercizi.map((e) => '${e['nomeOriginale'] ?? ''}'.trim()).toSet()) {
       if (originale.isEmpty) continue;
+      // Una correzione fatta a mano in un import precedente vince su tutto.
+      final ricordato = ricordati[AbbinamentiRicordati.chiave(originale)];
+      if (ricordato != null && (ricordato == originale || ufficiali.contains(ricordato))) {
+        scelti[originale] = ricordato;
+        continue;
+      }
       final diretto = _abbinamentoDiretto(originale, ufficiali);
       if (diretto != null) {
         scelti[originale] = diretto;
@@ -715,6 +729,7 @@ class AiService {
                   'caricoTargetKg': _toDoubleOrNull(es['caricoTargetKg']),
                   'serieAttive': es['serieAttive'] is List ? es['serieAttive'] : <dynamic>[],
                   'progressione': es['progressione'],
+                  if (es['nomeOriginale'] is String) 'nomeOriginale': es['nomeOriginale'],
                 };
               })
               .toList();

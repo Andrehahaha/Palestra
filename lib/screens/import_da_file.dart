@@ -2,8 +2,11 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../models/scheda.dart';
+import '../services/abbinamenti_ricordati.dart';
 import '../services/ai_service.dart';
+import '../services/correzioni_nomi.dart';
 import 'crea_scheda.dart';
+import 'revisione_nomi.dart';
 
 /// Fa scegliere un file (foto, PDF, Word) e lo manda all'import AI.
 /// `null` se l'utente annulla la scelta.
@@ -24,6 +27,22 @@ Future<EsitoAi<List<Scheda>>?> importaSchedaDaFile(BuildContext context) async {
   final esito = await AiService.instance.analizzaFile(nomeFile: file.name, bytes: file.bytes!);
   if (context.mounted) Navigator.pop(context);
   return esito;
+}
+
+/// Fa controllare i nomi cambiati o senza foto, applica le correzioni a
+/// tutte le settimane e le ricorda. Se l'utente torna indietro le schede
+/// restano come lette.
+Future<void> rivediNomiImportati(BuildContext context, List<Scheda> schede) async {
+  final database = await AiService.instance.nomiDatabase();
+  final voci = CorrezioniNomi.daRivedere(schede, database.toSet());
+  if (voci.isEmpty || !context.mounted) return;
+  final scelte = await Navigator.push<Map<String, String>>(
+    context,
+    MaterialPageRoute(builder: (_) => RevisioneNomiScreen(voci: voci, database: database..sort())),
+  );
+  if (scelte == null) return;
+  CorrezioniNomi.applica(schede, scelte);
+  await AbbinamentiRicordati.ricorda(scelte);
 }
 
 /// Revisione lato coach dei giorni importati prima dell'invio.
