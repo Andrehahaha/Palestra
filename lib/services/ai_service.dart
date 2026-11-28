@@ -13,6 +13,7 @@ import '../services/api_esercizi.dart';
 import '../services/dizionario_esercizi.dart';
 import '../services/archivio_atleta.dart';
 import '../services/carichi.dart';
+import '../services/programma_settimane.dart';
 import '../services/riepilogo_import.dart';
 import '../services/testo_docx.dart';
 import '../services/workload_calculator.dart';
@@ -616,12 +617,17 @@ class AiService {
       if (questa.length < prima.length) settimane[ordinate[i]] = _completaSettimana(questa, prima);
     }
 
-    // Le tecniche restano negli esercizi del piano; la W1 mostra solo quelle
-    // che il calendario ammette (es. "settimana 1: nessuna tecnica").
+    // Il piano tiene la W1 come in tabella; la W1 dell'atleta applica il
+    // calendario: RIR +n e solo le tecniche ammesse (es. "nessuna tecnica").
     final w1 = calendario[1];
     if (w1 != null && esercizi.isNotEmpty) {
       esercizi = [
-        for (final e in esercizi) {...e, 'tecniche': w1.filtra(List<String>.from(e['tecniche'] as List))},
+        for (final e in esercizi)
+          {
+            ...e,
+            'tecniche': w1.filtra(List<String>.from(e['tecniche'] as List)),
+            if (w1.rirDelta != null) 'rirTarget': ProgrammaSettimane.spostaRir(e['rirTarget'] as String?, w1.rirDelta!),
+          },
       ];
     }
 
