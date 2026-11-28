@@ -121,3 +121,17 @@ La foto passa dallo stesso percorso di PDF e Word.
   nuovo prompt non sono attivi.
 - Le chiavi vecchie sono ancora nella cronologia di git: sono state
   ruotate, ma conviene limitare le nuove nella console Google Cloud.
+
+## 28 novembre 2026 — La W2 che arrivava da un vecchio import
+
+Dopo il deploy, la W1 importata era giusta ma la W2 mostrava già il ciclo 2.
+Il log diceva "ripristino snapshot target=2": la settimana non veniva dal
+programma, ma da uno storico salvato.
+
+Le schede importate non avevano un id, e l'app ne ricavava uno da nome ed
+esercizi. Reimportando lo stesso PDF l'id era identico a quello dell'import
+precedente, già eliminato, e con lui tornavano le sue settimane e la bozza,
+che è salvata per nome.
+
+**Fatto.** Ogni import riceve un id nuovo. Una bozza con un id diverso dalla
+scheda aperta viene ignorata.

@@ -113,4 +113,12 @@ void main() {
     expect(es(16, 'Alzate laterali').tecniche, ['Drop Set']);
     expect(es(16, 'Panca inclinata').rirTarget, '2-3');
   });
+
+  test('ogni import ha un id nuovo: niente storico di un import precedente', () {
+    final a = AiService.normalizzaSchedeImportate([_rispostaAi, _rispostaAi]);
+    final b = AiService.normalizzaSchedeImportate([_rispostaAi]);
+    final ids = [...a, ...b].map((s) => Scheda.fromJson(s).id).toList();
+    expect(ids.toSet().length, 3);
+    expect(ids.every((id) => !id.startsWith('legacy_')), isTrue);
+  });
 }

@@ -271,6 +271,16 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
 
       final decoded = jsonDecode(bozzaJson);
       if (decoded is! Map<String, dynamic>) return;
+      // La bozza è salvata per nome: se è di un'altra scheda con lo stesso nome
+      // (es. un import precedente eliminato) non va usata.
+      final idBozza = (decoded['scheda'] as Map?)?['id']?.toString();
+      if (idBozza != null && idBozza != widget.scheda.id) {
+        if (kDebugMode) {
+          debugPrint("[WEEK] bozza di un'altra scheda ignorata: bozza=$idBozza, scheda=${widget.scheda.id}");
+        }
+        _snapshotCurrentWeek();
+        return;
+      }
 
       final uiRaw = decoded['ui'];
       if (uiRaw is Map) {

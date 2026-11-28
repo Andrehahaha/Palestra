@@ -395,6 +395,8 @@ class AiService {
     return null;
   }
 
+  static int _contatoreImport = 0;
+
   static List<Map<String, dynamic>> _normalizzaSchemaSchede(List<dynamic> rawItems) {
     return rawItems
         .whereType<Map>()
@@ -408,7 +410,9 @@ class AiService {
           final programma = {for (final e in piano.settimane.entries) '${e.key}': e.value};
 
           return {
-            'id': hasStableId ? rawId : null,
+            // Senza id, Scheda.fromJson ne ricava uno da nome ed esercizi: reimportando
+            // lo stesso documento si ritroverebbero settimane e bozza del vecchio import.
+            'id': hasStableId ? rawId : 'sch_${DateTime.now().microsecondsSinceEpoch}_${++_contatoreImport}',
             'nome': scheda['nome']?.toString().trim().isNotEmpty == true ? scheda['nome'] : 'Scheda Importata',
             'livello': scheda['livello']?.toString().trim().isNotEmpty == true ? scheda['livello'] : 'Intermedio',
             'categoria': scheda['categoria']?.toString().trim().isNotEmpty == true ? scheda['categoria'] : 'Importata AI',
