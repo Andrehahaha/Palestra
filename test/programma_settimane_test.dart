@@ -160,6 +160,48 @@ void main() {
     });
   });
 
+  group('tecniche negli esercizi, filtrate per settimana', () {
+    /// Come la tabella del PDF: W1 nessuna, W2-4 solo LP, dal ciclo 2 tutte.
+    Scheda conTecniche() => _upper()
+      ..calendario = {
+        1: const SettimanaPiano(rirDelta: 2, tecniche: []),
+        2: const SettimanaPiano(rirDelta: 1, tecniche: ['LP']),
+        3: const SettimanaPiano(rirDelta: 0, tecniche: ['LP']),
+        5: const SettimanaPiano(scarico: true),
+        6: const SettimanaPiano(rirDelta: 1),
+      };
+    List<String> tecnicheCroci(List<Esercizio> l) => l.firstWhere((e) => e.nome == 'Croci ai cavi').tecniche;
+
+    test('W1 senza tecniche: dalla W2 tornano quelle del piano (solo LP)', () {
+      final s = conTecniche();
+      // Nella W1 l'atleta ha la croce senza LP: la W2 la riprende dal piano.
+      final fatta = [_es('Panca inclinata', 4, rir: '1-2', peso: '80'), _es('Croci ai cavi', 2, rir: '0-1', peso: '20')];
+      final w2 = (ProgrammaSettimane.decidi(s, 2, haSnapshotAtleta: false, ultimaSettimanaNormale: fatta) as UsaProgramma).esercizi;
+      expect(tecnicheCroci(w2), ['LP']);
+      expect(w2.firstWhere((e) => e.nome == 'Croci ai cavi').serieAttive.first.peso, '20');
+    });
+
+    test('ciclo 2: le tecniche della W6, anche dopo la ripartenza', () {
+      final s = conTecniche();
+      expect(tecnicheCroci(_settimana(s, 6, seriePanca: 4)), ['Rest Pause']);
+      expect(tecnicheCroci(_settimana(s, 7)), ['Rest Pause']);
+      expect(tecnicheCroci(_settimana(s, 16)), ['Rest Pause']);
+    });
+
+    test('settimana con solo LP toglie le altre tecniche', () {
+      final s = conTecniche()
+        ..programma![1] = [_es('Panca inclinata', 4, rir: '1-2'), _es('Croci ai cavi', 2, rir: '0-1', tecniche: ['LP', 'Drop Set'])];
+      expect(tecnicheCroci(_settimana(s, 3)), ['LP']);
+    });
+
+    test('conTecnicheDelPiano dopo la progressione guidata', () {
+      final s = conTecniche();
+      final dopo = ProgrammaSettimane.conTecnicheDelPiano(s, 2, [_es('Croci ai cavi', 2), _es('Aggiunto da me', 3, tecniche: ['Drop Set'])]);
+      expect(tecnicheCroci(dopo), ['LP']);
+      expect(dopo.last.tecniche, ['Classico']);
+    });
+  });
+
   group('casi che restano come prima', () {
     test('una settimana già fatta dall\'atleta vince su tutto', () {
       expect(ProgrammaSettimane.decidi(_upper(), 2, haSnapshotAtleta: true, ultimaSettimanaNormale: _fatta(4)), isA<UsaSnapshot>());

@@ -154,6 +154,14 @@ test('analyze: prompt su nomi (nomeOriginale, niente forzature), cicli e settima
   assert.match(p, /lista completa/i);
 });
 
+test('analyze: tecniche negli esercizi, filtro per settimana nel calendario', () => {
+  const p = ai.buildAnalyzePrompt([]);
+  assert.match(p, /"tecniche": \[\]/);
+  assert.match(p, /"tecniche": \["LP"\]/);
+  assert.match(p, /solo per l'esercizio sotto cui è scritta/i);
+  assert.match(p, /per braccio/i);
+});
+
 test('analyze: la categoria è il titolo del programma', () => {
   const p = ai.buildAnalyzePrompt([]);
   assert.match(p, /titolo del programma/i);

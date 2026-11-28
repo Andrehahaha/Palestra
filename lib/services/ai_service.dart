@@ -616,6 +616,15 @@ class AiService {
       if (questa.length < prima.length) settimane[ordinate[i]] = _completaSettimana(questa, prima);
     }
 
+    // Le tecniche restano negli esercizi del piano; la W1 mostra solo quelle
+    // che il calendario ammette (es. "settimana 1: nessuna tecnica").
+    final w1 = calendario[1];
+    if (w1 != null && esercizi.isNotEmpty) {
+      esercizi = [
+        for (final e in esercizi) {...e, 'tecniche': w1.filtra(List<String>.from(e['tecniche'] as List))},
+      ];
+    }
+
     final ultimaScritta = [...settimane.keys, ...calendario.keys, 1].reduce((a, b) => a > b ? a : b);
     var durata = _intero(scheda['durataSettimane'] ?? scheda['durataProgramma']);
     var ripartiDa = _intero(scheda['ripartiDaSettimana']);
@@ -629,6 +638,22 @@ class AiService {
     if (ripartiDa != null && (ripartiDa < 1 || ripartiDa > durata)) ripartiDa = null;
 
     return (esercizi: esercizi, settimane: settimane, calendario: calendario, durata: durata, ripartiDa: ripartiDa);
+  }
+
+  static final _perLato = RegExp(r'\(?\s*per\s+(braccio|gamba|lato)\s*\)?', caseSensitive: false);
+
+  /// "10-12 per braccio" -> ripetizioni "10-12", nota "Per braccio.": le
+  /// ripetizioni restano un numero o un intervallo.
+  static (String, String?) _ripetizioniENote(Object? ripetizioni, Object? note) {
+    final testo = '${ripetizioni ?? ''}';
+    final nota = note?.toString();
+    final m = _perLato.firstMatch(testo);
+    if (m == null) return (testo, nota);
+    final perLato = 'Per ${m.group(1)!.toLowerCase()}.';
+    final pulite = testo.replaceAll(_perLato, '').trim();
+    final giaScritto = nota?.toLowerCase().contains('per ${m.group(1)!.toLowerCase()}') ?? false;
+    if (giaScritto) return (pulite, nota);
+    return (pulite, nota == null || nota.trim().isEmpty ? perLato : '$perLato $nota');
   }
 
   static List<Map<String, dynamic>> _normalizzaListaEsercizi(dynamic raw) {
@@ -665,14 +690,15 @@ class AiService {
                         : <String>['Classico'];
 
                 final rirDaInput = es['rirTarget'] ?? es['rir'] ?? es['rpe'];
+                final (ripetizioni, note) = _ripetizioniENote(es['ripetizioni'], es['note']);
 
                 return {
                   'nome': es['nome']?.toString().trim().isNotEmpty == true ? es['nome'] : 'Esercizio',
                   'avvicinamento': _toIntOrDefault(es['avvicinamento'], 0),
                   'workingSet': _toIntOrDefault(es['workingSet'], 3),
-                  'ripetizioni': (es['ripetizioni'] ?? '').toString(),
+                  'ripetizioni': ripetizioni,
                   'recupero': (es['recupero'] ?? '').toString(),
-                  'note': es['note']?.toString(),
+                  'note': note,
                   'tecniche': tecniche,
                   'modalitaIntensita': modalita,
                   'rirTarget': modalita == 'rir' && rirDaInput != null

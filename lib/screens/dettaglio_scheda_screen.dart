@@ -202,6 +202,9 @@ class _DettaglioSchedaScreenState extends State<DettaglioSchedaScreen> with Widg
       if (widget.scheda.settimanaCorrente < targetWeek) {
         widget.scheda.settimanaCorrente = targetWeek;
       }
+      // Anche qui le tecniche della settimana vengono dal piano (es. LP dalla W2).
+      widget.scheda.esercizi =
+          ProgrammaSettimane.conTecnicheDelPiano(widget.scheda, targetWeek, widget.scheda.esercizi);
       if (kDebugMode) {
         debugPrint('[WEEK] ritorno da schermata progressione: current=${widget.scheda.settimanaCorrente}, target=$targetWeek');
       }

@@ -89,6 +89,20 @@ void main() {
       expect(mano.ripartiDaSettimana, isNull);
     });
 
+    test('tecniche della settimana: nessuna, solo alcune, tutte', () {
+      final nessuna = SettimanaPiano.fromJson({'rirDelta': 2, 'tecniche': []})!;
+      final soloLp = SettimanaPiano.fromJson({'tecniche': ['LP']})!;
+      final tutte = SettimanaPiano.fromJson({'rirDelta': 0})!;
+      expect(nessuna.filtra(['LP']), ['Classico']);
+      expect(soloLp.filtra(['lp', 'Drop Set']), ['lp']);
+      expect(soloLp.filtra(['Rest Pause']), ['Classico']);
+      expect(tutte.filtra(['Drop Set']), ['Drop Set']);
+      expect(SettimanaPiano.fromJson(soloLp.toJson())!.tecniche, ['LP']);
+      expect(SettimanaPiano.fromJson(nessuna.toJson())!.tecniche, isEmpty);
+      expect(tutte.toJson().containsKey('tecniche'), isFalse);
+      expect(SettimanaPiano.fromJson({'tecniche': 'nessuna'})!.tecniche, isEmpty);
+    });
+
     test('scheda fatta a mano: programma null', () {
       final s = Scheda.fromJson({'id': 'b', 'nome': 'X', 'esercizi': []});
       expect(s.programma, isNull);

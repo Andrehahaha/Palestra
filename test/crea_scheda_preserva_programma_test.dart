@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:palestra/models/esercizio.dart';
 import 'package:palestra/models/regola_progressione.dart';
 import 'package:palestra/models/scheda.dart';
+import 'package:palestra/models/settimana_piano.dart';
 import 'package:palestra/screens/crea_scheda.dart';
 
 void main() {
@@ -95,5 +96,40 @@ void main() {
     expect(salvata!.programma![2]!.single.nome, 'Stacco da Terra');
     expect(salvata!.durataProgramma, 2);
     expect(salvata!.ripartiDaSettimana, 1);
+  });
+
+  testWidgets('salvare in W1 non toglie dal piano le tecniche nascoste dal calendario', (tester) async {
+    Esercizio croci(List<String> tecniche) =>
+        Esercizio(nome: 'Croci ai cavi', avvicinamento: 0, workingSet: 2, ripetizioni: '12-15', recupero: '120', tecniche: tecniche);
+    final originale = Scheda(
+      id: 'lp',
+      nome: 'Upper',
+      livello: 'Intermedio',
+      esercizi: [croci(['Classico'])],
+      programma: {1: [croci(['LP'])]},
+      calendario: {1: const SettimanaPiano(rirDelta: 2, tecniche: [])},
+    );
+
+    Scheda? salvata;
+    await tester.pumpWidget(MaterialApp(
+      home: Builder(
+        builder: (context) => TextButton(
+          onPressed: () async {
+            salvata = await Navigator.push<Scheda>(
+              context,
+              MaterialPageRoute(builder: (_) => CreaSchedaScreen(schedaDaModificare: originale)),
+            );
+          },
+          child: const Text('apri'),
+        ),
+      ),
+    ));
+    await tester.tap(find.text('apri'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('SALVA SCHEDA'));
+    await tester.pumpAndSettle();
+
+    expect(salvata!.programma![1]!.single.tecniche, ['LP']);
+    expect(salvata!.esercizi.single.tecniche, ['Classico']);
   });
 }

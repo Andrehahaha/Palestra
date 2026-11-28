@@ -88,8 +88,29 @@ abstract final class ProgrammaSettimane {
         e.rirTarget = spostaRir(base, delta);
       }
     }
-    if (info?.scarico ?? false) esercizi = esercizi.map(_scarica).toList();
+    if (info?.scarico ?? false) {
+      esercizi = esercizi.map(_scarica).toList();
+    } else {
+      esercizi = conTecnicheDelPiano(scheda, destinazione, esercizi);
+    }
     return UsaProgramma(esercizi);
+  }
+
+  /// Le tecniche stanno negli esercizi del piano; il calendario dice quali
+  /// valgono in [settimana] (es. W1 nessuna, W2-4 solo LP, dal ciclo 2 tutte).
+  /// Ogni esercizio prende quelle dell'esercizio con lo stesso nome nella
+  /// settimana del piano in vigore; quelli non nel piano tengono le loro.
+  static List<Esercizio> conTecnicheDelPiano(Scheda scheda, int settimana, List<Esercizio> esercizi) {
+    final programma = scheda.programma;
+    if (programma == null) return esercizi;
+    final eq = settimanaEquivalente(scheda, settimana);
+    final info = scheda.calendario?[eq];
+    if (info?.scarico ?? false) return esercizi;
+    final riferimento = _settimanaDiRiferimento(programma, eq);
+    return esercizi.map((e) {
+      final delPiano = riferimento.where((r) => r.nome == e.nome).firstOrNull?.tecniche ?? e.tecniche;
+      return Esercizio.fromJson({...e.toJson(), 'tecniche': info?.filtra(delPiano) ?? delPiano});
+    }).toList();
   }
 
   /// Ultima settimana fatta dall'atleta che non sia uno scarico, partendo da

@@ -314,6 +314,37 @@ void main() {
       expect(service.ultimiNomiCambiati, isEmpty);
     });
 
+    test('tecniche: la W1 mostra quelle ammesse dal calendario, il piano le tiene tutte', () async {
+      final s = await importa({
+        'nome': 'Upper',
+        'esercizi': [
+          {'nome': 'Croci ai cavi', 'tecniche': ['LP']},
+          es('Squat'),
+        ],
+        'calendario': {
+          '1': {'rirDelta': 2, 'tecniche': []},
+          '2-4': {'tecniche': ['LP']},
+        },
+      });
+      expect(s.esercizi.first.tecniche, ['Classico']);
+      expect(s.programma![1]!.first.tecniche, ['LP']);
+      expect(s.calendario![3]!.tecniche, ['LP']);
+    });
+
+    test('"per braccio" nelle ripetizioni finisce nelle note', () async {
+      final s = await importa({
+        'nome': 'Full body',
+        'esercizi': [
+          {'nome': 'Pulley basso a un braccio', 'ripetizioni': '10-12 per braccio', 'note': 'Tira col gomito.'},
+          {'nome': 'Pressa', 'ripetizioni': '10 (per gamba)'},
+        ],
+      });
+      expect(s.esercizi[0].ripetizioni, '10-12');
+      expect(s.esercizi[0].note, 'Per braccio. Tira col gomito.');
+      expect(s.esercizi[1].ripetizioni, '10');
+      expect(s.esercizi[1].note, 'Per gamba.');
+    });
+
     test('calendario: chiavi testuali e intervalli espansi, valori non validi scartati', () async {
       final s = await importa({
         'nome': 'Upper',

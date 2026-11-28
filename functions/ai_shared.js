@@ -92,8 +92,15 @@ Estrai i dati e restituisci SOLO un ARRAY JSON valido contenente un oggetto per 
 ${sezioneNomi(nomiUfficiali)}
 REGOLE PER LE TECNICHE:
 [Classico, Back off, Drop Set, Super Set, Rest Pause, Piramidale, Giant Set, Cluster Set, Top Set, Feeder Set, Warm Up, Myo-reps, AMRAP, Negative, Isometria, Stripping, Trisets, Pre-stancaggio, EMOM, Burnouts, LP].
-"LP" = LP (parziali in allungamento). Indicazioni come "Ultima serie: LP", "Ultima serie: drop set" vanno in "tecniche" dell'esercizio (es. ["LP"]).
-Se una tecnica vale solo in alcuni cicli (es. "LP nel ciclo 1, rest-pause dal ciclo 2"), mettila nelle settimane giuste: quella del ciclo 1 in "esercizi", quella del ciclo 2 nella prima settimana del ciclo 2 in "programma".
+"LP" = LP (parziali in allungamento).
+- Le tecniche vanno SEMPRE in "tecniche" dell'esercizio a cui si riferiscono (es. "Ultima serie: LP" -> ["LP"], "Ultima serie: drop set" -> ["Drop Set"], "rest-pause 40" -> ["Rest Pause"]).
+- Un'indicazione vale solo per l'esercizio sotto cui è scritta, in quel giorno: lo stesso esercizio in un altro giorno può non averla. Non spostarla su un altro esercizio.
+- In "esercizi" (settimana 1) metti le tecniche del ciclo 1 anche se la tabella della progressione dice che la settimana 1 non ne usa: quali tecniche valgono in ogni settimana lo indica il "calendario".
+- Se una tecnica vale solo da un certo ciclo (es. "drop set (dal ciclo 2)", "LP nel ciclo 1, rest-pause dal ciclo 2"), in "esercizi" metti solo quella del ciclo 1 (o nessuna); quella del ciclo nuovo va nella prima settimana di quel ciclo in "programma".
+- Pause e tempi di esecuzione ("fermo di 1'' in basso", "discesa di 3''") vanno in "note", non in "tecniche".
+
+REGOLE PER LE RIPETIZIONI:
+- "ripetizioni" contiene solo il numero o l'intervallo (es. "10-12"). Indicazioni come "per braccio" o "per gamba" vanno in "note".
 
 REGOLE PER L'RPE:
 Se nella foto per un esercizio è indicato un valore come @8, RPE 8, RIR 2, estrai solo il numero.
@@ -133,6 +140,7 @@ IL RIR NEGLI ESERCIZI:
 
 CALENDARIO DELLE SETTIMANE (uguale per tutti i giorni, ripetilo su ogni giorno):
 - Se il documento indica per settimana una variazione del RIR rispetto alla tabella (es. "Tabella +2", "Tabella +1", "Tabella"), metti in "calendario" la settimana con "rirDelta": 2, 1, 0.
+- Se il documento indica per settimana quali tecniche usare (es. colonna "Tecniche": "Nessuna", "Solo LP", "Tutte"), metti "tecniche": [] per nessuna, ["LP"] per solo LP; per "Tutte" non mettere "tecniche".
 - Se una settimana è di scarico/deload, metti "scarico": true. Non riscrivere gli esercizi dello scarico: lo calcola l'app.
 - Chiave = numero della settimana come stringa; per un intervallo puoi usare "7-9".
 - Se il documento non indica nulla del genere, "calendario" è {}.
@@ -183,8 +191,9 @@ STRUTTURA JSON:
       "2": [ { "nome": "...", "workingSet": 4, "ripetizioni": "6", "tecniche": ["Classico"] } ]
     },
     "calendario": {
-      "1": { "rirDelta": 2 },
-      "2": { "scarico": true }
+      "1": { "rirDelta": 2, "tecniche": [] },
+      "2-4": { "rirDelta": 1, "tecniche": ["LP"] },
+      "5": { "scarico": true }
     },
     "durataSettimane": null,
     "ripartiDaSettimana": null

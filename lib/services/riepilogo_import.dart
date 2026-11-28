@@ -17,14 +17,19 @@ abstract final class RiepilogoImport {
         final voci = (calendario.keys.toList()..sort()).map((w) {
           final info = calendario[w]!;
           if (info.scarico) return 'W$w scarico';
-          final d = info.rirDelta!;
-          return 'W$w RIR ${d >= 0 ? '+' : ''}$d';
+          final d = info.rirDelta;
+          final tecniche = info.tecniche;
+          return [
+            'W$w',
+            if (d != null) 'RIR ${d >= 0 ? '+' : ''}$d',
+            if (tecniche != null) tecniche.isEmpty ? 'nessuna tecnica' : 'solo ${tecniche.join('+')}',
+          ].join(' ');
         });
         out.writeln('calendario: ${voci.join(', ')}');
       }
 
       out.writeln('W1:');
-      for (final e in s.esercizi) {
+      for (final e in s.programma?[1] ?? s.esercizi) {
         out.writeln('  ${_esercizio(e)}');
       }
       final altre = (s.programma?.keys.where((w) => w != 1).toList() ?? [])..sort();
@@ -57,6 +62,9 @@ abstract final class RiepilogoImport {
     }
     final tecniche = e.tecniche.where((t) => t != 'Classico').toList();
     if (tecniche.isNotEmpty) riga.write(' [${tecniche.join(', ')}]');
+    if (e.recupero.trim().isNotEmpty) riga.write(' rec ${e.recupero.trim()}');
+    final nota = e.note?.trim() ?? '';
+    if (nota.toLowerCase().startsWith('per ')) riga.write(' (${nota.split('.').first.toLowerCase()})');
     final p = e.progressione;
     if (p != null) riga.write(' | progressione da W${p.daSettimana}: ${_regola(p)}');
     return riga.toString();

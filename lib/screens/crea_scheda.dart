@@ -41,9 +41,21 @@ class _CreaSchedaScreenState extends State<CreaSchedaScreen> {
     final programma = originale?.programma;
     if (programma == null) return null;
     if (_settimanaCorrente != 1 || !programma.containsKey(1)) return programma;
+    final filtroW1 = originale!.calendario?[1];
+    final vecchiaW1 = programma[1]!;
     return {
       ...programma,
-      1: _eserciziAggiunti.map((e) => Esercizio.fromJson(e.toJson())).toList(),
+      1: _eserciziAggiunti.map((e) {
+        final copia = e.toJson();
+        // Le tecniche che il calendario nasconde in W1 (es. LP dalla W2) restano nel piano.
+        final prima = vecchiaW1.where((v) => v.nome == e.nome).firstOrNull;
+        if (filtroW1 != null && prima != null) {
+          final nascoste = prima.tecniche.where((t) => t != 'Classico' && !filtroW1.filtra([t]).contains(t));
+          final visibili = e.tecniche.where((t) => t != 'Classico' || nascoste.isEmpty);
+          copia['tecniche'] = {...visibili, ...nascoste}.toList();
+        }
+        return Esercizio.fromJson(copia);
+      }).toList(),
     };
   }
 
