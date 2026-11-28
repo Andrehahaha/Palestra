@@ -83,3 +83,41 @@ e sistemati:
 **Da tenere d'occhio.**
 - Va ridistribuito il proxy (Worker e Functions) per usare PDF e Word.
 - Una regola del coach non si può ancora togliere dall'app.
+
+## 27–28 novembre 2026 — Confronto con la scheda vera
+
+**Problema.** Confrontando l'import con il PDF, serie e RIR erano giusti ma
+c'erano altri errori:
+- alcuni nomi erano abbinati male (una pressa per le gambe diventava una
+  chest press);
+- le schede di programmi diversi finivano tutte nella stessa cartella;
+- le tecniche mancavano o erano sull'esercizio sbagliato;
+- la W1 non applicava il suo "RIR tabella +2".
+
+**Ragionamento.**
+- *Nomi.* Con 800 nomi nel prompt l'AI sceglieva male e la lettura era
+  lenta. Ho diviso il lavoro: prima si legge il documento, poi per ogni
+  nome incerto l'app propone i 10 più simili e un secondo passaggio
+  sceglie, oppure risponde "nessuno". Dopo l'import l'utente vede i nomi
+  cambiati e quelli senza foto, li corregge, e la correzione viene
+  ricordata.
+- *Cartelle.* Una cartella per programma, con il titolo del documento; se
+  esiste già diventa "Titolo (2)". Una cartella piena si può eliminare dopo
+  una conferma.
+- *Tecniche.* La tabella della progressione dice quali tecniche usare in
+  ogni settimana: nessuna in W1, solo LP in W2-4, tutte dal ciclo 2. Le
+  tecniche restano scritte negli esercizi; il calendario dice quali valgono
+  quella settimana e l'app le filtra.
+- *Verifica.* Ho scritto un test che fa scorrere il Lunedì della scheda
+  dalla W1 alla W16. È lì che è venuto fuori il RIR della W1.
+
+**Fatto.** Abbinamento dei nomi in due passaggi, revisione e memoria
+delle correzioni, cartelle senza doppioni, tecnica LP, tecniche per
+settimana, RIR della W1, "per braccio" nelle note, recuperi nel log.
+La foto passa dallo stesso percorso di PDF e Word.
+
+**Da tenere d'occhio.**
+- Il Worker va ridistribuito, altrimenti il secondo passaggio sui nomi e il
+  nuovo prompt non sono attivi.
+- Le chiavi vecchie sono ancora nella cronologia di git: sono state
+  ruotate, ma conviene limitare le nuove nella console Google Cloud.
